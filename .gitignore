@@ -1,0 +1,80 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual Environment
+.venv/
+venv/
+ENV/
+env/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.claude/
+
+# Environment variables and sensitive data
+.env
+*.key
+*_key.txt
+credentials.json
+
+# Logs
+*.log
+logs/
+*.log.*
+
+# Audio files (generated during testing)
+*.wav
+*.mp3
+*.m4a
+
+# Test outputs
+test_output/
+debug_output/
+*_test/
+recording_*.wav
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Project specific
+meeting_translator/recorded_*.wav
+meeting_translator/*_test_output/
+meeting_translator/rate_test_output/
+meeting_translator/dynamic_speed_test/
+meeting_translator/speech_stretch_comparison/
+meeting_translator/time_stretch_test/
+meeting_translator/voicemeeter_device_config.txt
+
+# Documentation build
+docs/_build/
+docs/.doctrees/
+
+# Temporary files
+*.tmp
+*.temp
+nul

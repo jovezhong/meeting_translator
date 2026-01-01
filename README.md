@@ -40,13 +40,19 @@
 
 ---
 
+## 演示视频
+
+📺 查看完整演示和技术细节：[Meeting Translator 项目分享](https://www.superlinear.academy/c/share-your-projects/f2e629)
+
+---
+
 ## 快速开始
 
 ### 前置要求
 
 1. **操作系统**: Windows 10/11
 2. **Python**: 3.9 - 3.11
-3. **虚拟音频设备**: [VB-Cable](https://vb-audio.com/Cable/)
+3. **虚拟音频设备**: [Voicemeeter](https://voicemeeter.com/)
 4. **API Key**: 阿里云 DashScope API（[申请地址](https://dashscope.console.aliyun.com/)）
 
 ### 安装步骤
@@ -77,9 +83,9 @@ pip install -r requirements.txt
 > pipwin install pyaudio
 > ```
 
-#### 4. 安装 VB-Cable
+#### 4. 安装 Voicemeeter
 
-下载并安装 [VB-Cable](https://vb-audio.com/Cable/index.htm)，安装后重启电脑。
+下载并安装 [Voicemeeter](https://voicemeeter.com/)（推荐 Voicemeeter Banana 或 Potato 版本），安装后重启电脑。
 
 #### 5. 配置环境变量
 
@@ -113,8 +119,8 @@ python -m meeting_translator.main_app
    - 按 `F2` 切换到"听模式"（英译中）
 
 3. **设置会议软件**
-   - 在会议软件中选择**"CABLE Input"**作为麦克风
-   - 系统音频输出保持默认
+   - 在会议软件中选择**"Voicemeeter Input"**（或 "VoiceMeeter Input"）作为麦克风
+   - 系统音频输出设置为 "Voicemeeter Input"
 
 4. **开始会议**
    - 说模式：直接说中文，对方听到英文
@@ -130,9 +136,10 @@ python -m meeting_translator.main_app
 {
   "description": "Translation glossary for meeting translator",
   "glossary": {
-    "宇信科技": "Yusys Tech",
-    "信贷系统": "Credit Management System",
-    "你的公司名": "Your Company Name"
+    "产品A": "Product A",
+    "业务系统": "Business System",
+    "你的公司名": "Your Company Name",
+    "张总": "Mr. Zhang"
   }
 }
 ```
@@ -168,8 +175,8 @@ python -m meeting_translator.main_app
 **问题**: 说模式下，对方听不到我的翻译。
 
 **解决方案**:
-- 确认会议软件的麦克风设置为 "CABLE Input"
-- 检查 VB-Cable 是否正确安装
+- 确认会议软件的麦克风设置为 "Voicemeeter Input"
+- 检查 Voicemeeter 是否正在运行
 - 重启程序和会议软件
 
 ### 2. 字幕不显示？
@@ -228,7 +235,7 @@ meeting_translator/
 ## 致谢
 
 - 感谢阿里云通义千问团队提供的实时翻译API
-- 感谢 VB-Audio 提供的虚拟音频设备
+- 感谢 VB-Audio 提供的 Voicemeeter 虚拟音频设备
 
 ---
 

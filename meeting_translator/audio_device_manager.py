@@ -58,7 +58,7 @@ class AudioDeviceManager:
                     is_legacy_loopback = any([
                         'Stereo Mix' in device_name,           # 英文：立体声混音
                         '立体声混音' in device_name,             # 中文：立体声混音
-                        'CABLE Output' in device_name,         # VB-Cable Output端
+                        'CABLE Output' in device_name,         # 虚拟音频设备 Output端
                         'VoiceMeeter' in device_name and 'Out' in device_name,  # VoiceMeeter Output
                         '主声音捕获' in device_name,             # 中文：主声音捕获驱动程序
                         'Wave Out Mix' in device_name,         # 某些声卡的混音设备
@@ -212,8 +212,8 @@ if __name__ == "__main__":
     if voicemeeter:
         print(f"\n找到 VoiceMeeter: {voicemeeter}")
 
-    vb_cable = manager.find_device_by_name("CABLE Output")
-    if vb_cable:
-        print(f"\n找到 VB-Cable: {vb_cable}")
+    cable_output = manager.find_device_by_name("CABLE Output")
+    if cable_output:
+        print(f"\n找到虚拟音频设备: {cable_output}")
 
     manager.cleanup()

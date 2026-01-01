@@ -184,7 +184,7 @@ class MeetingTranslatorApp(QWidget):
         speak_layout.addWidget(self.speak_input_combo)
 
         # 英文虚拟麦克风输出
-        speak_output_label = QLabel("🔊 英文虚拟麦克风输出（VB-Cable）:")
+        speak_output_label = QLabel("🔊 英文虚拟麦克风输出（Voicemeeter）:")
         speak_output_label.setObjectName("subtitleLabel")
         speak_layout.addWidget(speak_output_label)
         self.speak_output_combo = QComboBox()
@@ -253,7 +253,7 @@ class MeetingTranslatorApp(QWidget):
         <b>🎤 说模式</b>: 捕获中文麦克风→输出英文到虚拟麦克风（适合说中文参会）<br>
         <b>🔄 双向模式</b>: 同时运行听+说（完整双向同传）<br>
         <br>
-        <b>💡 提示:</b> 说模式需要安装 VB-Audio Cable 虚拟音频设备
+        <b>💡 提示:</b> 说模式需要安装 Voicemeeter 虚拟音频设备
         """)
         help_label.setWordWrap(True)
         help_label.setObjectName("infoLabel")
@@ -367,7 +367,7 @@ class MeetingTranslatorApp(QWidget):
             if not device.get('is_loopback') and not device.get('is_wasapi_loopback'):
                 self.speak_input_combo.addItem(device['name'], device)
 
-        # 3. 加载说模式输出设备（虚拟麦克风，如 VB-Cable Input）
+        # 3. 加载说模式输出设备（虚拟麦克风，如 Voicemeeter Input）
         output_devices = self.device_manager.get_output_devices()
         self.speak_output_combo.clear()
 

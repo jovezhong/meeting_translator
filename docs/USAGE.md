@@ -27,18 +27,18 @@
    python --version
    ```
 
-#### 2. 安装 VB-Cable
+#### 2. 安装 Voicemeeter
 
-1. 访问 [VB-Cable 官网](https://vb-audio.com/Cable/)
-2. 下载 VBCABLE_Driver_Pack.zip
-3. 解压并以管理员身份运行 VBCABLE_Setup_x64.exe
+1. 访问 [Voicemeeter 官网](https://voicemeeter.com/)
+2. 下载 Voicemeeter Banana 或 Potato 版本
+3. 运行安装程序并按提示完成安装
 4. 安装完成后**重启电脑**
 
-#### 3. 验证 VB-Cable 安装
+#### 3. 验证 Voicemeeter 安装
 
 打开 Windows 声音设置：
-- 录音设备：应该看到 "CABLE Output"
-- 播放设备：应该看到 "CABLE Input"
+- 录音设备：应该看到 "Voicemeeter Output" 或 "VoiceMeeter Output"
+- 播放设备：应该看到 "Voicemeeter Input" 或 "VoiceMeeter Input"
 
 #### 4. 安装项目依赖
 
@@ -116,7 +116,7 @@ python -m meeting_translator.main_app
 
 **操作步骤**:
 1. 按 `F1` 切换到说模式
-2. 在会议软件中设置麦克风为 "CABLE Input"
+2. 在会议软件中设置麦克风为 "Voicemeeter Input"
 3. 直接说中文
 4. 其他参会者听到流畅的英文
 
@@ -193,11 +193,11 @@ TTS_VOICE=Cherry
 {
   "description": "Translation glossary for meeting translator",
   "glossary": {
-    "宇信科技": "Yusys Tech",
-    "信贷系统": "Credit Management System",
     "你的公司名": "Your Company Name",
-    "产品名A": "Product A",
-    "张总": "Mr. Zhang"
+    "产品A": "Product A",
+    "业务系统": "Business System",
+    "张总": "Mr. Zhang",
+    "核心功能": "Core Feature"
   }
 }
 ```
@@ -243,10 +243,10 @@ pip install -r requirements.txt --force-reinstall
 
 ### 问题 3: 音频设备问题
 
-**症状**: 找不到 CABLE Input/Output
+**症状**: 找不到 Voicemeeter 设备
 
 **解决方案**:
-1. 重新安装 VB-Cable
+1. 重新安装 Voicemeeter
 2. 重启电脑
 3. 在 Windows 声音设置中启用被禁用的设备
 
@@ -272,8 +272,8 @@ SILENCE_DURATION_MS=500
 **症状**: 说模式下，对方听不到声音
 
 **检查清单**:
-- [ ] 会议软件的麦克风设置为 "CABLE Input"
-- [ ] VB-Cable 驱动正常运行
+- [ ] 会议软件的麦克风设置为 "Voicemeeter Input"
+- [ ] Voicemeeter 正常运行
 - [ ] 程序显示"说模式"已激活
 - [ ] 系统音量未静音
 

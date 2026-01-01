@@ -16,11 +16,11 @@
 {
   "description": "Translation glossary for meeting translator",
   "glossary": {
-    "宇信科技": "Yusys Tech",
-    "翟汉斌": "Mr. Zhai",
-    "任逍遥": "Xiaoyao Ren",
-    "线上现金贷": "online instant loan",
-    "信贷系统": "Credit Mgmt System"
+    "ABC科技": "ABC Tech",
+    "张总": "Mr. Zhang",
+    "李经理": "Ms. Li",
+    "核心产品": "Core Product",
+    "业务系统": "Business System"
   }
 }
 ```
@@ -67,10 +67,10 @@ manager.remove_term("旧术语")
 ### 1. 添加术语的原则
 
 ✅ **应该添加：**
-- 公司名称：宇信科技 → Yusys Tech
-- 人名：翟汉斌 → Mr. Zhai
-- 专业术语：信贷系统 → Credit Mgmt System
-- 产品名称：线上现金贷 → online instant loan
+- 公司名称：ABC科技 → ABC Tech
+- 人名：张总 → Mr. Zhang
+- 专业术语：业务系统 → Business System
+- 产品名称：核心产品 → Core Product
 - 项目名称、技术术语等
 
 ❌ **不需要添加：**
@@ -81,23 +81,23 @@ manager.remove_term("旧术语")
 
 **人名翻译：**
 ```json
-"翟汉斌": "Mr. Zhai",
-"任逍遥": "Ms. Ren"
+"张总": "Mr. Zhang",
+"李经理": "Ms. Li"
 ```
 - 加上称谓（Mr./Ms.）
 - 使用拼音或惯用译名
 
 **公司名称：**
 ```json
-"宇信科技": "Yusys Tech"
+"ABC科技": "ABC Tech"
 ```
 - 使用官方英文名
 - 保持大小写一致
 
 **技术术语：**
 ```json
-"信贷系统": "Credit Mgmt System",
-"风控系统": "Risk Control System"
+"业务系统": "Business System",
+"数据平台": "Data Platform"
 ```
 - 使用行业标准术语
 - 保持简洁明了
@@ -108,9 +108,9 @@ manager.remove_term("旧术语")
 
 例如：
 ```
-输入识别："雨信科技"（同音字错误）
-实际应该："宇信科技"
-翻译输出："Yusys Tech"（✅ 仍然正确）
+输入识别："ABC可计"（同音字错误）
+实际应该："ABC科技"
+翻译输出："ABC Tech"（✅ 仍然正确）
 ```
 
 LLM 会根据上下文和词汇表自动纠正。
@@ -121,13 +121,13 @@ LLM 会根据上下文和词汇表自动纠正。
 
 ```python
 context = """
-会议背景：金融科技公司技术讨论会
+会议背景：科技公司产品讨论会
 
 关键术语：
-宇信科技, 翟汉斌, 线上现金贷, 信贷系统
+ABC科技, 张总, 核心产品, 业务系统
 
 示例：
-宇信科技是Yusys Tech。翟汉斌是Mr. Zhai。线上现金贷是online instant loan。
+ABC科技是ABC Tech。张总是Mr. Zhang。核心产品是Core Product。
 """
 ```
 
@@ -140,10 +140,10 @@ instructions = """
 You are a professional translator for business meetings.
 
 **CRITICAL TERMINOLOGY - MUST USE EXACT TRANSLATIONS:**
-- 宇信科技 → Yusys Tech
-- 翟汉斌 → Mr. Zhai
-- 线上现金贷 → online instant loan
-- 信贷系统 → Credit Mgmt System
+- ABC科技 → ABC Tech
+- 张总 → Mr. Zhang
+- 核心产品 → Core Product
+- 业务系统 → Business System
 
 **Translation Rules:**
 0. 你的输入来自语音识别，有时候同音字可能被识别错误。
@@ -159,14 +159,14 @@ You are a professional translator for business meetings.
 
 ### 无词汇表：
 ```
-输入：我是翟汉斌，来自宇信科技。
-翻译：I am Zhai Hanbin from Yuxin Technology.
+输入：我是张总，来自ABC科技。
+翻译：I am Zhang from ABC Technology.
 ```
 
 ### 有词汇表：
 ```
-输入：我是翟汉斌，来自宇信科技。
-翻译：I am Mr. Zhai from Yusys Tech.
+输入：我是张总，来自ABC科技。
+翻译：I am Mr. Zhang from ABC Tech.
      ✅ 正确的称谓    ✅ 正确的公司名
 ```
 

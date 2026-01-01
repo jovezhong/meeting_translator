@@ -44,27 +44,18 @@ class GlossaryManager:
     def _get_default_glossary(self) -> Dict[str, str]:
         """获取默认术语表"""
         return {
-            # 公司名称
-            "Yuxin Technology": "Yusys Tech",
-            "Yuxin Tech": "Yusys Tech",
-            "Yu Xin Technology": "Yusys Tech",
+            # 公司名称示例
+            "Example Company": "Example Company",
+            "Sample Corp": "Sample Corporation",
 
-            # 人名
-            "Zhai Hanbin": "Mr. Zhai",
-            "Hanbin Zhai": "Mr. Zhai",
-            "Ren Xiaoyao": "Ms. Ren",
-            "Xiaoyao Ren": "Ms. Ren",
+            # 人名示例
+            "Zhang Manager": "Mr. Zhang",
+            "Li Manager": "Ms. Li",
 
-            # 产品术语
-            "credit system": "Loan Operating System",
-            "Credit System": "Loan Operating System",
-            "online cash loan": "online instant loan",
-            "Online Cash Loan": "online instant loan",
-            "instant cash loan": "online instant loan",
-
-            # 项目名称
-            "Haobio Project": "Haobio Project",
-            "Zhang Naijin": "Zhang Naijin"
+            # 产品术语示例
+            "core product": "Core Product",
+            "business system": "Business System",
+            "data platform": "Data Platform"
         }
 
     def _compile_patterns(self):

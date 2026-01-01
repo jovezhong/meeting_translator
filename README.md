@@ -120,8 +120,7 @@ cp .env.example .env
 run.bat
 
 # 方法2: 手动运行
-cd meeting_translator
-python main_app.py
+cd meeting_translator && python main_app.py
 ```
 
 **macOS**:
@@ -143,8 +142,7 @@ cd meeting_translator && python main_app.py
    run.bat
 
    # 方法2: 手动运行
-   cd meeting_translator
-   python main_app.py
+   cd meeting_translator && python main_app.py
    ```
 
    **macOS**:

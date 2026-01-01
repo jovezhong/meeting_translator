@@ -401,8 +401,6 @@ SILENCE_DURATION_MS=500
 ## 下一步
 
 - [词汇表使用指南](GLOSSARY_GUIDE.md)
-- [API 文档](API.md)
-- [贡献指南](../CONTRIBUTING.md)
 
 ---
 

@@ -25,15 +25,15 @@ def load_glossary(glossary_file=None):
     加载词汇表
 
     Args:
-        glossary_file: 词汇表文件路径，默认使用 ../meeting_translator/glossary.json
+        glossary_file: 词汇表文件路径，默认使用 glossary.json
 
     Returns:
         词汇表字典
     """
     if glossary_file is None:
-        # 默认使用 meeting_translator 目录下的 glossary.json
+        # 默认使用当前目录下的 glossary.json
         current_dir = os.path.dirname(__file__)
-        glossary_file = os.path.join(current_dir, "..", "meeting_translator", "glossary.json")
+        glossary_file = os.path.join(current_dir, "glossary.json")
 
     if os.path.exists(glossary_file):
         try:

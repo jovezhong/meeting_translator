@@ -16,10 +16,6 @@ except ImportError:
 import traceback
 
 # 导入词汇表相关函数
-import sys
-current_dir = os.path.dirname(__file__)
-if current_dir not in sys.path:
-    sys.path.append(current_dir)
 from livetranslate_client import load_glossary, build_translation_instructions
 
 

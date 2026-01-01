@@ -9,9 +9,6 @@ import os
 import logging
 from typing import Callable, Optional
 
-# 添加 poc 目录到路径
-sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'poc'))
-
 from livetranslate_client import LiveTranslateClient
 from livetranslate_text_client import LiveTranslateTextClient
 

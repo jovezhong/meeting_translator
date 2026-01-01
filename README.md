@@ -99,8 +99,14 @@ cp .env.example .env
 
 #### 6. 运行程序
 
+**Windows**:
 ```bash
-python -m meeting_translator.main_app
+# 方法1: 使用批处理文件（推荐）
+run.bat
+
+# 方法2: 手动运行
+cd meeting_translator
+python main_app.py
 ```
 
 ---
@@ -111,7 +117,12 @@ python -m meeting_translator.main_app
 
 1. **启动程序**
    ```bash
-   python -m meeting_translator.main_app
+   # Windows: 使用批处理文件
+   run.bat
+
+   # 或手动运行
+   cd meeting_translator
+   python main_app.py
    ```
 
 2. **选择模式**

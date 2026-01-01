@@ -81,11 +81,16 @@ DASHSCOPE_API_KEY=sk-xxxxxxxxxxxxxxxx
 ### 启动程序
 
 ```bash
-# 激活虚拟环境
+# 方法1: 使用批处理文件（推荐）
+run.bat
+
+# 方法2: 手动运行
+# 1. 激活虚拟环境（如果使用）
 .venv\Scripts\activate
 
-# 运行程序
-python -m meeting_translator.main_app
+# 2. 进入目录并运行
+cd meeting_translator
+python main_app.py
 ```
 
 ### 界面说明

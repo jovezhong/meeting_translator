@@ -645,12 +645,18 @@ class MeetingTranslatorApp(QWidget):
 
         logger.info(f"听模式设备: {device['name']}, {device_sample_rate}Hz, {device_channels}声道")
 
+        # 根据 provider 确定目标采样率
+        if self.provider == "openai":
+            target_sample_rate = 24000  # OpenAI Realtime API 需要 24kHz
+        else:
+            target_sample_rate = 16000  # 阿里云需要 16kHz
+
         self.listen_audio_capture = AudioCaptureThread(
             device_index=device['index'],
             on_audio_chunk=self.listen_translation_service.send_audio_chunk,
             sample_rate=device_sample_rate,
             channels=device_channels,
-            target_sample_rate=16000,
+            target_sample_rate=target_sample_rate,
             target_channels=1
         )
         self.listen_audio_capture.start()
@@ -730,6 +736,12 @@ class MeetingTranslatorApp(QWidget):
         logger.info(f"说模式输出: {output_device['name']}")
         logger.info(f"英文语音音色: {selected_voice}")
 
+        # 根据 provider 确定目标采样率
+        if self.provider == "openai":
+            target_sample_rate = 24000  # OpenAI Realtime API 需要 24kHz
+        else:
+            target_sample_rate = 16000  # 阿里云需要 16kHz
+
         try:
             logger.info("正在创建音频捕获线程...")
             self.speak_audio_capture = AudioCaptureThread(
@@ -737,7 +749,7 @@ class MeetingTranslatorApp(QWidget):
                 on_audio_chunk=self.speak_translation_service.send_audio_chunk,
                 sample_rate=input_sample_rate,
                 channels=input_channels,
-                target_sample_rate=16000,
+                target_sample_rate=target_sample_rate,
                 target_channels=1
             )
             logger.info("音频捕获线程已创建，正在启动...")

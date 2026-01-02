@@ -21,6 +21,12 @@ from typing import Callable, Optional, Dict
 from translation_client_base import BaseTranslationClient
 from livetranslate_client import load_glossary
 
+try:
+    from python_socks.async_.asyncio import Proxy
+    PROXY_AVAILABLE = True
+except ImportError:
+    PROXY_AVAILABLE = False
+
 
 class OpenAIRealtimeClient(BaseTranslationClient):
     """OpenAI Realtime API translation client"""
@@ -92,10 +98,32 @@ class OpenAIRealtimeClient(BaseTranslationClient):
         }
 
         try:
-            self.ws = await websockets.connect(
-                self.api_url,
-                extra_headers=headers
-            )
+            # Check for proxy configuration
+            proxy_url = os.getenv("HTTP_PROXY") or os.getenv("http_proxy") or "http://127.0.0.1:7890"
+
+            if PROXY_AVAILABLE and proxy_url:
+                print(f"[INFO] Using proxy: {proxy_url}")
+                try:
+                    proxy = Proxy.from_url(proxy_url)
+                    sock = await proxy.connect(dest_host="api.openai.com", dest_port=443, timeout=10)
+                    self.ws = await websockets.connect(
+                        self.api_url,
+                        extra_headers=headers,
+                        sock=sock,
+                        server_hostname="api.openai.com"
+                    )
+                except Exception as proxy_error:
+                    print(f"[WARN] Proxy connection failed: {proxy_error}, trying direct connection...")
+                    self.ws = await websockets.connect(
+                        self.api_url,
+                        extra_headers=headers
+                    )
+            else:
+                self.ws = await websockets.connect(
+                    self.api_url,
+                    extra_headers=headers
+                )
+
             self.is_connected = True
             print(f"[OK] Connected to: {self.api_url}")
             await self.configure_session()
@@ -175,6 +203,14 @@ class OpenAIRealtimeClient(BaseTranslationClient):
             return
 
         try:
+            # Debug: 统计发送的音频块
+            if not hasattr(self, '_audio_chunk_count'):
+                self._audio_chunk_count = 0
+            self._audio_chunk_count += 1
+
+            if self._audio_chunk_count <= 5 or self._audio_chunk_count % 100 == 0:
+                print(f"[DEBUG] Sending audio chunk #{self._audio_chunk_count}, size: {len(audio_data)} bytes")
+
             event = {
                 "type": "input_audio_buffer.append",
                 "audio": base64.b64encode(audio_data).decode()
@@ -246,6 +282,10 @@ class OpenAIRealtimeClient(BaseTranslationClient):
                     event = json.loads(message)
                     event_type = event.get("type")
 
+                    # Debug: 打印所有收到的事件类型
+                    if event_type not in ["session.created", "session.updated"]:
+                        print(f"[DEBUG] Event received: {event_type}")
+
                     if event_type == "session.created":
                         print("[OK] Session created")
 
@@ -259,21 +299,44 @@ class OpenAIRealtimeClient(BaseTranslationClient):
                             audio_data = base64.b64decode(audio_b64)
                             self.audio_playback_queue.put(audio_data)
 
+                    elif event_type == "response.text.delta":
+                        # Translation text (incremental) - for text-only mode
+                        delta = event.get("delta", "")
+                        print(f"[DEBUG] text.delta: delta='{delta}', full_event_keys={list(event.keys())}")
+                        if delta and on_text_received:
+                            on_text_received(f"[译增量] {delta}")
+
+                    elif event_type == "response.text.done":
+                        # Translation complete - for text-only mode
+                        text = event.get("text", "")
+                        print(f"[DEBUG] text.done: text='{text}', full_event_keys={list(event.keys())}")
+                        if text and on_text_received:
+                            on_text_received(f"[译] {text}")
+
                     elif event_type == "response.audio_transcript.delta":
-                        # Translation text (incremental)
+                        # Translation text (incremental) - for audio mode
                         delta = event.get("delta", "")
                         if delta and on_text_received:
                             on_text_received(f"[译增量] {delta}")
 
                     elif event_type == "response.audio_transcript.done":
-                        # Translation complete
+                        # Translation complete - for audio mode
                         transcript = event.get("transcript", "")
                         if transcript and on_text_received:
                             on_text_received(f"[译] {transcript}")
 
                     elif event_type == "conversation.item.input_audio_transcription.completed":
                         # Source language transcription
+                        # 数据在 event.transcript 字段中
                         transcript = event.get("transcript", "")
+                        if not transcript:
+                            # 有时也可能在 item.content[0].transcript 中
+                            item = event.get("item", {})
+                            content = item.get("content", [])
+                            if content and len(content) > 0:
+                                transcript = content[0].get("transcript", "")
+
+                        print(f"[DEBUG] input_audio_transcription.completed: transcript='{transcript}', full_event_keys={list(event.keys())}")
                         if transcript and on_text_received:
                             on_text_received(f"[源] {transcript}")
 

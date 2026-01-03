@@ -5,6 +5,7 @@ using Doubao's AST (Automatic Simultaneous Translation) API
 """
 
 import os
+import sys
 import uuid
 import asyncio
 import websockets
@@ -19,6 +20,13 @@ from typing import Callable, Optional, Dict
 
 from translation_client_base import BaseTranslationClient
 from livetranslate_client import load_glossary
+
+# Add python_protogen to path for protobuf imports
+current_dir = os.path.dirname(os.path.abspath(__file__))
+protogen_dir = os.path.join(current_dir, "python_protogen")
+if protogen_dir not in sys.path:
+    sys.path.insert(0, protogen_dir)
+
 from python_protogen.products.understanding.ast.ast_service_pb2 import TranslateRequest, TranslateResponse
 from python_protogen.common.events_pb2 import Type
 

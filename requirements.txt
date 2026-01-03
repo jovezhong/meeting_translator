@@ -8,6 +8,7 @@ pyaudio==0.2.14                    # 音频输入输出
 pyaudiowpatch==0.2.12.13 ; sys_platform == "win32"           # PyAudio WASAPI 补丁 (Windows)
 websockets==12.0                    # WebSocket 客户端
 python-dotenv==1.0.0               # 环境变量管理
+protobuf==4.25.1                   # Protocol Buffers (用于 Doubao API)
 
 # GUI and UI
 # 图形界面

@@ -176,7 +176,7 @@ class DoubaoClient(BaseTranslationClient):
 
             # Target audio configuration (only for s2s mode)
             if self.mode == "s2s":
-                request.target_audio.format = "ogg_opus"
+                request.target_audio.format = "pcm"  # Use PCM for direct playback
                 request.target_audio.rate = self.output_rate
 
             # Request parameters
@@ -355,8 +355,7 @@ class DoubaoClient(BaseTranslationClient):
                 if audio_data is None:  # Stop signal
                     break
 
-                # Doubao outputs Opus format, decode if needed
-                # For now, play directly (PyAudio may need opus decoder)
+                # Doubao outputs PCM format, write directly
                 stream.write(audio_data)
 
         except Exception as e:

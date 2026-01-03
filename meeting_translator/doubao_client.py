@@ -145,6 +145,9 @@ class DoubaoClient(BaseTranslationClient):
 
             self.is_connected = True
 
+            # Configure session after connection
+            await self.configure_session()
+
         except Exception as e:
             print(f"[ERROR] Doubao connection failed: {e}")
             raise

@@ -178,6 +178,8 @@ class DoubaoClient(BaseTranslationClient):
             if self.mode == "s2s":
                 request.target_audio.format = "pcm"  # Use PCM for direct playback
                 request.target_audio.rate = self.output_rate
+                request.target_audio.bits = 16  # 16-bit PCM
+                request.target_audio.channel = 1  # Mono
 
             # Request parameters
             request.request.mode = self.mode

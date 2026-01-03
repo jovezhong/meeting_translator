@@ -113,6 +113,18 @@ class AudioOutputThread:
         logger.info("停止音频输出线程...")
         self.is_running = False
 
+        # 清空队列中的未播放数据，避免停止时播放积压内容
+        cleared_count = 0
+        while not self.audio_queue.empty():
+            try:
+                self.audio_queue.get_nowait()
+                cleared_count += 1
+            except queue.Empty:
+                break
+
+        if cleared_count > 0:
+            logger.debug(f"已清空 {cleared_count} 个未播放的音频块")
+
         # 发送终止信号
         try:
             self.audio_queue.put(None, timeout=0.5)

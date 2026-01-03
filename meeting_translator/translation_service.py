@@ -240,8 +240,23 @@ class MeetingTranslationService:
         # 解析文本
         if text.startswith("[源]"):
             source_text = text[4:].strip()
-            # 暂存源文本（等待翻译）
+            # 更新源文本为当前这一轮的
             self._current_source = source_text
+
+            # 如果有待处理的翻译（翻译先到，源文本后到），现在触发回调
+            if hasattr(self, '_pending_translation'):
+                target_text = self._pending_translation
+                delattr(self, '_pending_translation')
+
+                logger.debug(f"收到延迟的源文本，触发待处理的翻译回调: {source_text} → {target_text}")
+                if self.on_translation:
+                    try:
+                        self.on_translation(source_text, target_text, is_final=True)
+                    except Exception as e:
+                        logger.error(f"翻译回调执行失败: {e}")
+
+                # 清空源文本，避免下一轮重用
+                self._current_source = ''
 
         elif text.startswith("[译增量]"):
             # 增量文本（未finalize）
@@ -252,7 +267,7 @@ class MeetingTranslationService:
             # 直接替换（不累积）
             self._partial_translation = partial_text
 
-            # 获取源文本
+            # 获取源文本（增量翻译使用上一轮的源文本也可以接受）
             source_text = getattr(self, '_current_source', '')
 
             # 调用用户回调（标记为增量）
@@ -272,12 +287,25 @@ class MeetingTranslationService:
             # 获取源文本
             source_text = getattr(self, '_current_source', '')
 
-            # 调用用户回调（标记为最终）
-            if self.on_translation:
-                try:
-                    self.on_translation(source_text, target_text, is_final=True)
-                except Exception as e:
-                    logger.error(f"翻译回调执行失败: {e}")
+            # 如果源文本为空，说明 [源] 事件还没到达，需要等待
+            # 暂存翻译结果，等 [源] 事件到达后再触发回调
+            if not source_text:
+                logger.debug(f"翻译先到达，源文本为空，暂存翻译: {target_text}")
+                self._pending_translation = target_text
+            else:
+                # 源文本已经存在，清空待处理状态并正常回调
+                if hasattr(self, '_pending_translation'):
+                    delattr(self, '_pending_translation')
+
+                # 调用用户回调（标记为最终）
+                if self.on_translation:
+                    try:
+                        self.on_translation(source_text, target_text, is_final=True)
+                    except Exception as e:
+                        logger.error(f"翻译回调执行失败: {e}")
+
+                # 清空源文本，避免下一轮重用
+                self._current_source = ''
 
     def _start_audio_forwarding(self):
         """启动音频转发线程（从 API 队列→外部回调）"""

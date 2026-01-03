@@ -204,12 +204,12 @@ class OpenAIRealtimeClient(BaseTranslationClient):
 
         try:
             # Debug: 统计发送的音频块
-            if not hasattr(self, '_audio_chunk_count'):
-                self._audio_chunk_count = 0
-            self._audio_chunk_count += 1
-
-            if self._audio_chunk_count <= 5 or self._audio_chunk_count % 100 == 0:
-                print(f"[DEBUG] Sending audio chunk #{self._audio_chunk_count}, size: {len(audio_data)} bytes")
+            # if not hasattr(self, '_audio_chunk_count'):
+            #     self._audio_chunk_count = 0
+            # self._audio_chunk_count += 1
+            #
+            # if self._audio_chunk_count <= 5 or self._audio_chunk_count % 100 == 0:
+            #     print(f"[DEBUG] Sending audio chunk #{self._audio_chunk_count}, size: {len(audio_data)} bytes")
 
             event = {
                 "type": "input_audio_buffer.append",
@@ -283,8 +283,8 @@ class OpenAIRealtimeClient(BaseTranslationClient):
                     event_type = event.get("type")
 
                     # Debug: 打印所有收到的事件类型
-                    if event_type not in ["session.created", "session.updated"]:
-                        print(f"[DEBUG] Event received: {event_type}")
+                    # if event_type not in ["session.created", "session.updated"]:
+                    #     print(f"[DEBUG] Event received: {event_type}")
 
                     if event_type == "session.created":
                         print("[OK] Session created")
@@ -302,14 +302,14 @@ class OpenAIRealtimeClient(BaseTranslationClient):
                     elif event_type == "response.text.delta":
                         # Translation text (incremental) - for text-only mode
                         delta = event.get("delta", "")
-                        print(f"[DEBUG] text.delta: delta='{delta}', full_event_keys={list(event.keys())}")
+                        # print(f"[DEBUG] text.delta: delta='{delta}', full_event_keys={list(event.keys())}")
                         if delta and on_text_received:
                             on_text_received(f"[译增量] {delta}")
 
                     elif event_type == "response.text.done":
                         # Translation complete - for text-only mode
                         text = event.get("text", "")
-                        print(f"[DEBUG] text.done: text='{text}', full_event_keys={list(event.keys())}")
+                        # print(f"[DEBUG] text.done: text='{text}', full_event_keys={list(event.keys())}")
                         if text and on_text_received:
                             on_text_received(f"[译] {text}")
 
@@ -336,7 +336,7 @@ class OpenAIRealtimeClient(BaseTranslationClient):
                             if content and len(content) > 0:
                                 transcript = content[0].get("transcript", "")
 
-                        print(f"[DEBUG] input_audio_transcription.completed: transcript='{transcript}', full_event_keys={list(event.keys())}")
+                        # print(f"[DEBUG] input_audio_transcription.completed: transcript='{transcript}', full_event_keys={list(event.keys())}")
                         if transcript and on_text_received:
                             on_text_received(f"[源] {transcript}")
 

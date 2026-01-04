@@ -882,6 +882,16 @@ class MeetingTranslatorApp(QWidget):
             logger.info("翻译已停止")
             logger.info(f"主窗口状态: visible={self.isVisible()}, enabled={self.isEnabled()}")
 
+            # 强制flush所有日志
+            import sys
+            sys.stdout.flush()
+            sys.stderr.flush()
+            for handler in logging.getLogger().handlers:
+                handler.flush()
+
+            # 确认：打印到控制台
+            print("[SUCCESS] stop_translation completed successfully")
+
         except Exception as e:
             # 捕获整个stop_translation过程中的任何未捕获异常
             logger.critical(f"stop_translation发生严重错误: {e}", exc_info=True)
@@ -973,7 +983,13 @@ class MeetingTranslatorApp(QWidget):
 
     def closeEvent(self, event):
         """关闭事件"""
-        logger.info("主窗口关闭事件被触发")
+        logger.info("=" * 60)
+        logger.info("[CLOSE-EVENT] 主窗口关闭事件被触发")
+        logger.info(f"[CLOSE-EVENT] is_running={self.is_running}")
+        logger.info("=" * 60)
+        import sys
+        sys.stdout.flush()
+        sys.stderr.flush()
 
         # 停止翻译
         self.stop_translation()
@@ -986,7 +1002,7 @@ class MeetingTranslatorApp(QWidget):
         if self.device_manager:
             self.device_manager.cleanup()
 
-        logger.info("主窗口即将关闭")
+        logger.info("[CLOSE-EVENT] 主窗口即将关闭")
         event.accept()
 
 

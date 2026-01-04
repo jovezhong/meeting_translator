@@ -56,6 +56,11 @@ debug_output/
 *_test/
 recording_*.wav
 
+# Test and example files (development only)
+test_*.py
+*_example.py
+*_integration.py
+
 # OS
 .DS_Store
 Thumbs.db

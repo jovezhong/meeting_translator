@@ -185,11 +185,10 @@ class DoubaoClient(BaseTranslationClient):
             request.source_audio.channel = 1
 
             # Target audio configuration (only for s2s mode)
+            # Use ogg_opus format (as in official SDK) - will decode with PyAV
             if self.mode == "s2s":
-                request.target_audio.format = "pcm"  # PCM format for direct playback
+                request.target_audio.format = "ogg_opus"  # Opus format (official SDK standard)
                 request.target_audio.rate = self.output_rate  # 24000Hz
-                request.target_audio.bits = 16  # 16-bit PCM
-                request.target_audio.channel = 1  # Mono
 
             # Request parameters
             request.request.mode = self.mode
@@ -283,10 +282,16 @@ class DoubaoClient(BaseTranslationClient):
 
                 # Audio delta (incremental audio data)
                 elif event_type == self.EVENT_AUDIO_DELTA:
-                    audio_data = response.data
-                    print(f"[DEBUG] Audio delta: {len(audio_data) if audio_data else 0} bytes")
-                    if audio_data and self.audio_enabled:
-                        self.audio_playback_queue.put(audio_data)
+                    opus_data = response.data
+                    print(f"[DEBUG] Audio delta: {len(opus_data) if opus_data else 0} bytes (Opus)")
+                    if opus_data and self.audio_enabled:
+                        # Decode Opus to PCM before queueing
+                        pcm_data = self._decode_opus_to_pcm(opus_data)
+                        if pcm_data:
+                            print(f"[DEBUG] Decoded to PCM: {len(pcm_data)} bytes")
+                            self.audio_playback_queue.put(pcm_data)
+                        else:
+                            print(f"[WARN] Failed to decode Opus chunk")
 
                 # Audio done
                 elif event_type == self.EVENT_AUDIO_DONE:

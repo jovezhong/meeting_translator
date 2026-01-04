@@ -1,7 +1,7 @@
 {
   "description": "Translation glossary for meeting translator (Doubao AST API)",
   "glossary": {
-    "示例公司": "Example Company",
+    "我们公司": "ABC Company",
     "核心产品": "Core Product",
     "业务系统": "Business System",
     "人工智能": "Artificial Intelligence",

@@ -229,6 +229,13 @@ class DoubaoClient(BaseTranslationClient):
             print("[WARN] Not connected, cannot send audio")
             return
 
+        # Debug: Track audio sending (first 5 chunks only)
+        if not hasattr(self, '_audio_send_count'):
+            self._audio_send_count = 0
+        self._audio_send_count += 1
+        if self._audio_send_count <= 5:
+            print(f"[DEBUG] Sending audio chunk #{self._audio_send_count}, size={len(audio_data)} bytes")
+
         try:
             request = TranslateRequest()
             request.request_meta.SessionID = self.session_id

@@ -463,71 +463,76 @@ class MeetingTranslationServiceWrapper:
     def stop(self):
         """停止翻译服务（同步方法）"""
         if not self.is_running:
+            logger.debug("翻译服务已经停止，跳过")
             return
 
-        logger.info("正在停止翻译服务...")
-        self.is_running = False
+        try:
+            logger.info("[STOP-1] 正在停止翻译服务...")
+            self.is_running = False
 
-        # 1. 停止翻译服务并等待完成
-        if self.service and self.loop:
-            try:
-                future = asyncio.run_coroutine_threadsafe(self.service.stop(), self.loop)
-                future.result(timeout=2)  # 减少超时时间到2秒
-                logger.debug("翻译服务已停止")
-            except asyncio.TimeoutError:
-                logger.warning("停止翻译服务超时（2秒），强制继续")
-            except Exception as e:
-                logger.warning(f"停止翻译服务时出错: {e}")
+            # 1. 停止翻译服务并等待完成
+            if self.service and self.loop:
+                try:
+                    logger.debug("[STOP-2] 调用service.stop()...")
+                    future = asyncio.run_coroutine_threadsafe(self.service.stop(), self.loop)
+                    future.result(timeout=2)  # 减少超时时间到2秒
+                    logger.debug("[STOP-3] 翻译服务已停止")
+                except asyncio.TimeoutError:
+                    logger.warning("[STOP-ERROR] 停止翻译服务超时（2秒），强制继续")
+                except Exception as e:
+                    logger.warning(f"[STOP-ERROR] 停止翻译服务时出错: {e}", exc_info=True)
 
-        # 2. 给剩余任务时间自然完成（特别是WebSocket关闭）
-        if self.loop and self.loop.is_running():
-            try:
-                import time
-                time.sleep(0.3)  # 减少等待时间到300ms
+            # 2. 给剩余任务时间自然完成（特别是WebSocket关闭）
+            if self.loop and self.loop.is_running():
+                try:
+                    logger.debug("[STOP-4] 等待剩余任务完成...")
+                    import time
+                    time.sleep(0.2)  # 减少等待时间到200ms
 
-                # 获取所有待处理的任务
-                pending = asyncio.all_tasks(self.loop)
-                if pending:
-                    logger.debug(f"仍有 {len(pending)} 个待处理任务，正在取消...")
-                    for task in pending:
-                        task.cancel()
+                    # 获取所有待处理的任务
+                    pending = asyncio.all_tasks(self.loop)
+                    if pending:
+                        logger.debug(f"[STOP-5] 仍有 {len(pending)} 个待处理任务，正在取消...")
+                        for task in pending:
+                            task.cancel()
+                        # 给任务取消一点时间
+                        time.sleep(0.1)
+                except Exception as e:
+                    logger.warning(f"[STOP-ERROR] 处理剩余任务时出错: {e}", exc_info=True)
 
-                    # 给任务取消一点时间
-                    time.sleep(0.1)
-            except Exception as e:
-                logger.debug(f"处理剩余任务时出错: {e}")
+            # 3. 停止事件循环
+            if self.loop and self.loop.is_running():
+                logger.debug("[STOP-6] 停止事件循环...")
+                try:
+                    self.loop.call_soon_threadsafe(self.loop.stop)
+                except Exception as e:
+                    logger.warning(f"[STOP-ERROR] 停止事件循环时出错: {e}", exc_info=True)
 
-        # 3. 停止事件循环
-        if self.loop and self.loop.is_running():
-            self.loop.call_soon_threadsafe(self.loop.stop)
+            # 4. 等待线程结束
+            if self.thread and self.thread.is_alive():
+                logger.debug("[STOP-7] 等待服务线程结束...")
+                self.thread.join(timeout=2)  # 减少到2秒
+                if self.thread.is_alive():
+                    logger.warning("[STOP-ERROR] 翻译服务线程未能在 2 秒内结束")
 
-        # 4. 等待线程结束
-        if self.thread and self.thread.is_alive():
-            self.thread.join(timeout=3)
-            if self.thread.is_alive():
-                logger.warning("翻译服务线程未能在 3 秒内结束")
-
-        # 5. 清理事件循环
-        if self.loop:
-            try:
-                # 确保事件循环已停止
-                if self.loop.is_running():
-                    self.loop.stop()
-
-                # 关闭事件循环
-                if not self.loop.is_closed():
-                    self.loop.close()
-                    logger.debug("事件循环已关闭")
-            except Exception as e:
-                logger.debug(f"关闭事件循环时出错: {e}")
-            finally:
+            # 5. 清理事件循环（注意：不在这里close，让GC处理）
+            if self.loop:
+                logger.debug("[STOP-8] 清理事件循环引用...")
                 self.loop = None
 
-        # 6. 清理服务对象
-        self.service = None
-        self.thread = None
+            # 6. 清理服务对象
+            self.service = None
+            self.thread = None
 
-        logger.info("翻译服务包装器已停止")
+            logger.info("[STOP-9] 翻译服务包装器已停止")
+
+        except Exception as e:
+            logger.critical(f"[STOP-CRITICAL] stop()方法发生严重错误: {e}", exc_info=True)
+            # 确保清理状态
+            self.is_running = False
+            self.loop = None
+            self.service = None
+            self.thread = None
 
     def _format_error_message(self, error: Exception) -> str:
         """

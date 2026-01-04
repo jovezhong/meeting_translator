@@ -561,7 +561,13 @@ class MeetingTranslatorApp(QWidget):
         if not self.is_running:
             self.start_translation()
         else:
+            logger.info("[TOGGLE] Calling stop_translation...")
             self.stop_translation()
+            logger.info("[TOGGLE] stop_translation returned!")
+            import sys
+            sys.stdout.flush()
+            sys.stderr.flush()
+            print("[TOGGLE] Translation stopped successfully")
 
     def start_translation(self):
         """启动翻译（根据模式）"""

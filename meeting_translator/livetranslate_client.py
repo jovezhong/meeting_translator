@@ -18,6 +18,12 @@ except ImportError:
 import queue
 import threading
 import traceback
+import logging
+
+# 导入 OutputManager
+from output_manager import OutputManager
+
+logger = logging.getLogger(__name__)
 
 
 def load_glossary(glossary_file=None):
@@ -41,7 +47,7 @@ def load_glossary(glossary_file=None):
                 data = json.load(f)
                 return data.get("glossary", {})
         except Exception as e:
-            print(f"[WARN] 加载词汇表失败: {e}")
+            logger.warning(f"加载词汇表失败: {e}")
 
     # 返回默认词汇表
     return {
@@ -125,7 +131,7 @@ class LiveTranslateClient:
 
         # 加载词汇表
         self.glossary = load_glossary(glossary_file)
-        print(f"[OK] 已加载词汇表，包含 {len(self.glossary)} 个术语")
+        logger.info(f"已加载词汇表，包含 {len(self.glossary)} 个术语")
 
         # 麦克风输入配置
         self.input_rate = 16000
@@ -154,10 +160,10 @@ class LiveTranslateClient:
                 extra_headers=headers
             )
             self.is_connected = True
-            print(f"[OK] 已连接到: {self.api_url}")
+            logger.info(f"已连接到: {self.api_url}")
             await self.configure_session()
         except Exception as e:
-            print(f"[ERROR] 连接失败: {e}")
+            logger.error(f"连接失败: {e}")
             self.is_connected = False
             raise
 
@@ -193,7 +199,7 @@ class LiveTranslateClient:
                 "volume": 50
             }
         }
-        print(f"[OK] Session 配置完成")
+        logger.info("Session 配置完成")
         await self.ws.send(json.dumps(config))
 
     async def send_audio_chunk(self, audio_data: bytes):
@@ -217,7 +223,7 @@ class LiveTranslateClient:
             output=True,
             frames_per_buffer=self.output_chunk,
         )
-        print("[OK] 音频播放器已启动（24kHz, 单声道）")
+        logger.info("音频播放器已启动（24kHz, 单声道）")
 
         try:
             while self.is_connected or not self.audio_playback_queue.empty():
@@ -245,7 +251,7 @@ class LiveTranslateClient:
 
             stream.stop_stream()
             stream.close()
-            print("[OK] 音频播放器已停止")
+            logger.info("音频播放器已停止")
 
     def start_audio_player(self):
         """启动音频播放器线程"""
@@ -275,17 +281,19 @@ class LiveTranslateClient:
 
                 elif event_type == "response.done":
                     # 响应完成
-                    print("\n[OK] 响应完成")
+                    # Token 用量信息只在日志中记录，不在控制台显示
                     usage = event.get("response", {}).get("usage", {})
                     if usage:
-                        print(f"[INFO] Token 使用: {json.dumps(usage)}")
+                        logger.debug(f"Token 使用: {json.dumps(usage)}")
 
                 elif event_type == "conversation.item.input_audio_transcription.completed":
                     # 源语言转录完成（输入音频的转录）
                     text = event.get("transcript", "")
                     language = event.get("language", "")
                     if text:
-                        print(f"\n[源语言] {text} (语言: {language})")
+                        # 使用 OutputManager 记录源语言识别（不在控制台显示）
+                        manager = OutputManager.get_instance()
+                        manager.debug(f"[源语言] {text} (语言: {language})")
                         if on_text_received:
                             on_text_received(f"[源] {text}")
 
@@ -293,36 +301,37 @@ class LiveTranslateClient:
                     # 目标语言文本（翻译结果）
                     text = event.get("transcript", "")
                     if text:
-                        print(f"[目标语言] {text}")
+                        # 使用 OutputManager 发送翻译结果
+                        manager = OutputManager.get_instance()
+                        manager.translation(
+                            target_text=text,
+                            metadata={"provider": "qwen", "mode": "SPEAK"}  # 标记为说模式
+                        )
                         if on_text_received:
                             on_text_received(f"[译] {text}")
 
                 elif event_type == "conversation.item.input_audio_transcription.text":
                     # 源语言转录增量（实时显示转录过程）
-                    text = event.get("text", "")
-                    stash = event.get("stash", "")
-                    if stash:
-                        # stash 是预测部分
-                        display_text = f"{text}{stash}"
-                        print(f"[转录中] {display_text}", end="\r", flush=True)
+                    # 不在控制台显示，避免干扰
+                    pass
 
                 elif event_type == "error":
                     error = event.get("error", {})
                     error_code = error.get("code", "Unknown")
                     error_msg = error.get("message", "Unknown error")
-                    print(f"\n[ERROR] {error_code}: {error_msg}")
+                    logger.error(f"{error_code}: {error_msg}")
 
                     # InternalError 通常表示会话失效，需要重连
                     if error_code == "InternalError":
-                        print("[WARN] 检测到 InternalError，连接可能已失效")
+                        logger.warning("检测到 InternalError，连接可能已失效")
                         self.is_connected = False
                         break  # 退出消息循环，让上层重连
 
         except websockets.exceptions.ConnectionClosed as e:
-            print(f"\n[WARN] 连接已关闭: {e}")
+            logger.warning(f"连接已关闭: {e}")
             self.is_connected = False
         except Exception as e:
-            print(f"\n[ERROR] 消息处理错误: {e}")
+            logger.error(f"消息处理错误: {e}")
             traceback.print_exc()
             self.is_connected = False
 
@@ -335,7 +344,7 @@ class LiveTranslateClient:
             input=True,
             frames_per_buffer=self.input_chunk
         )
-        print("[OK] 麦克风已启动，请开始说话...")
+        logger.info("麦克风已启动，请开始说话...")
 
         try:
             while self.is_connected:
@@ -346,7 +355,7 @@ class LiveTranslateClient:
         finally:
             stream.stop_stream()
             stream.close()
-            print("[OK] 麦克风已停止")
+            logger.info("麦克风已停止")
 
     async def close(self):
         """优雅地关闭连接和清理资源"""
@@ -355,11 +364,11 @@ class LiveTranslateClient:
         if self.ws:
             try:
                 await asyncio.wait_for(self.ws.close(), timeout=2.0)
-                print("[OK] WebSocket 已关闭")
+                logger.info("WebSocket 已关闭")
             except asyncio.TimeoutError:
-                print("[WARN] WebSocket 关闭超时")
+                logger.warning("WebSocket 关闭超时")
             except Exception as e:
-                print(f"[WARN] 关闭 WebSocket 时出错: {e}")
+                logger.warning(f"关闭 WebSocket 时出错: {e}")
 
         # 优雅地停止音频播放器
         if self.audio_player_thread and self.audio_player_thread.is_alive():
@@ -367,11 +376,11 @@ class LiveTranslateClient:
             # 等待最多2秒，让播放器有时间清空队列和缓冲区
             self.audio_player_thread.join(timeout=2.0)
             if self.audio_player_thread.is_alive():
-                print("[WARN] 音频播放器线程未能正常结束")
+                logger.warning("音频播放器线程未能正常结束")
 
         if self.pyaudio_instance:
             try:
                 self.pyaudio_instance.terminate()
-                print("[OK] PyAudio 已终止")
+                logger.info("PyAudio 已终止")
             except Exception as e:
-                print(f"[WARN] 终止 PyAudio 时出错: {e}")
+                logger.warning(f"终止 PyAudio 时出错: {e}")

@@ -9,6 +9,7 @@ import base64
 import asyncio
 import json
 import websockets
+import logging
 try:
     import pyaudiowpatch as pyaudio
 except ImportError:
@@ -17,6 +18,11 @@ import traceback
 
 # 导入词汇表相关函数
 from livetranslate_client import load_glossary, build_translation_instructions
+
+# 导入 OutputManager
+from output_manager import OutputManager, IncrementalMode
+
+logger = logging.getLogger(__name__)
 
 
 class LiveTranslateTextClient:
@@ -49,7 +55,9 @@ class LiveTranslateTextClient:
 
         # 加载词汇表
         self.glossary = load_glossary(glossary_file)
-        print(f"[OK] 已加载词汇表，包含 {len(self.glossary)} 个术语")
+        # 使用 OutputManager 记录状态信息（会写入日志文件，不在控制台显示）
+        manager = OutputManager.get_instance()
+        manager.debug(f"已加载词汇表，包含 {len(self.glossary)} 个术语")
 
         # 输入配置
         self.input_rate = 16000
@@ -69,10 +77,14 @@ class LiveTranslateTextClient:
                 extra_headers=headers
             )
             self.is_connected = True
-            print(f"[OK] 已连接到: {self.api_url}")
+            # 使用 OutputManager 记录状态信息
+            manager = OutputManager.get_instance()
+            manager.status(f"已连接到: {self.api_url}")
             await self.configure_session()
         except Exception as e:
-            print(f"[ERROR] 连接失败: {e}")
+            # 错误信息通过 OutputManager
+            manager = OutputManager.get_instance()
+            manager.error(f"连接失败: {e}")
             self.is_connected = False
             raise
 
@@ -102,7 +114,9 @@ class LiveTranslateTextClient:
                 }
             }
         }
-        print(f"[OK] Session 配置完成（纯文本模式）")
+        # 使用 OutputManager 记录状态信息
+        manager = OutputManager.get_instance()
+        manager.status("Session 配置完成（纯文本模式）")
         await self.ws.send(json.dumps(config))
 
     async def send_audio_chunk(self, audio_data: bytes):
@@ -119,6 +133,9 @@ class LiveTranslateTextClient:
 
     async def handle_server_messages(self, on_text_received=None):
         """处理服务器消息（纯文本模式）"""
+        # 获取 OutputManager 单例
+        manager = OutputManager.get_instance()
+
         try:
             async for message in self.ws:
                 event = json.loads(message)
@@ -126,17 +143,19 @@ class LiveTranslateTextClient:
 
                 if event_type == "response.done":
                     # 响应完成
-                    print("\n[OK] 响应完成")
+                    # Token 用量信息使用 debug 级别（默认不显示）
                     usage = event.get("response", {}).get("usage", {})
                     if usage:
-                        print(f"[INFO] Token 使用: {json.dumps(usage)}")
+                        manager.debug(f"Token 使用: {json.dumps(usage)}")
 
                 elif event_type == "conversation.item.input_audio_transcription.completed":
                     # 源语言转录完成
                     text = event.get("transcript", "")
                     language = event.get("language", "")
                     if text:
-                        print(f"\n[源语言] {text} (语言: {language})")
+                        # 使用 OutputManager 记录源语言识别
+                        manager.debug(f"[源语言] {text} (语言: {language})")
+                        # 保留旧回调用于向后兼容
                         if on_text_received:
                             on_text_received(f"[源] {text}")
 
@@ -147,25 +166,25 @@ class LiveTranslateTextClient:
                     stash = event.get("stash", "")
 
                     if text or stash:
-                        # 打印文本用于控制台实时显示
-                        full_partial = text + stash
-                        print(f"\r[增量] {full_partial}", end="", flush=True)
-
-                        # 构造带预测的格式：已确定文本【预测:预测文本】
-                        if stash:
-                            formatted_text = f"{text}【预测:{stash}】"
-                        else:
-                            formatted_text = text
-
-                        # 传递格式化文本用于字幕显示（text 正常显示，stash 灰色显示）
-                        if on_text_received:
-                            on_text_received(f"[译增量] {formatted_text}")
+                        # 使用 OutputManager 发送增量翻译
+                        manager.partial(
+                            target_text=text,
+                            mode=IncrementalMode.REPLACE,
+                            predicted_text=stash if stash else None,
+                            metadata={"provider": "qwen"}
+                        )
 
                 elif event_type == "response.text.done":
                     # 翻译文本完成（纯文本模式特有）
                     text = event.get("text", "")
                     if text:
-                        print(f"\n[目标语言] {text}")
+                        # 使用 OutputManager 发送最终翻译
+                        manager.translation(
+                            target_text=text,
+                            metadata={"provider": "qwen", "mode": "LISTEN"}  # 标记为听模式
+                        )
+
+                        # 保留旧回调用于向后兼容（可选）
                         if on_text_received:
                             on_text_received(f"[译] {text}")
 
@@ -173,19 +192,21 @@ class LiveTranslateTextClient:
                     error = event.get("error", {})
                     error_code = error.get("code", "Unknown")
                     error_msg = error.get("message", "Unknown error")
-                    print(f"\n[ERROR] {error_code}: {error_msg}")
+
+                    # 使用 OutputManager 发送错误信息（显示给用户）
+                    manager.error(f"{error_code}: {error_msg}")
 
                     # InternalError 通常表示会话失效，需要重连
                     if error_code == "InternalError":
-                        print("[WARN] 检测到 InternalError，连接可能已失效")
+                        manager.warning("检测到 InternalError，连接可能已失效")
                         self.is_connected = False
                         break  # 退出消息循环，让上层重连
 
         except websockets.exceptions.ConnectionClosed as e:
-            print(f"\n[WARN] 连接已关闭: {e}")
+            manager.warning(f"连接已关闭: {e}")
             self.is_connected = False
         except Exception as e:
-            print(f"\n[ERROR] 消息处理错误: {e}")
+            manager.error(f"消息处理错误: {e}")
             traceback.print_exc()
             self.is_connected = False
 
@@ -202,8 +223,11 @@ class LiveTranslateTextClient:
         if self.ws:
             try:
                 await asyncio.wait_for(self.ws.close(), timeout=2.0)
-                print("[OK] WebSocket 已关闭")
+                manager = OutputManager.get_instance()
+                manager.debug("WebSocket 已关闭")
             except asyncio.TimeoutError:
-                print("[WARN] WebSocket 关闭超时")
+                manager = OutputManager.get_instance()
+                manager.debug("WebSocket 关闭超时")
             except Exception as e:
-                print(f"[WARN] 关闭 WebSocket 时出错: {e}")
+                manager = OutputManager.get_instance()
+                manager.debug(f"关闭 WebSocket 时出错: {e}")

@@ -10,6 +10,7 @@ import logging
 from typing import Callable, Optional
 
 from translation_client_factory import TranslationClientFactory
+from output_manager import OutputManager
 
 logger = logging.getLogger(__name__)
 
@@ -113,10 +114,14 @@ class MeetingTranslationService:
                 self._run_with_auto_reconnect()
             )
 
-            logger.info("翻译服务已启动")
+            # 使用 OutputManager 发送状态信息
+            manager = OutputManager.get_instance()
+            manager.status("翻译服务已启动")
 
         except Exception as e:
-            logger.error(f"启动翻译服务失败: {e}")
+            # 错误通过 OutputManager
+            manager = OutputManager.get_instance()
+            manager.error(f"启动翻译服务失败: {e}")
             raise
 
     async def stop(self):

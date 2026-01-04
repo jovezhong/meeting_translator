@@ -31,8 +31,11 @@ from translation_service import MeetingTranslationServiceWrapper
 from translation_mode import TranslationMode, ModeConfig
 from subtitle_window import SubtitleWindow
 from config_manager import ConfigManager
+from output_manager import OutputManager, MessageType
+from output_handlers import SubtitleHandler, ConsoleHandler, LogFileHandler
+from PyQt5.QtCore import qInstallMessageHandler, QtMsgType
 
-# 配置日志（同时输出到控制台和文件）
+# 配置日志（只输出到文件，不输出到控制台）
 import sys
 log_dir = os.path.join(os.path.expanduser("~"), "Documents", "会议翻译日志")
 os.makedirs(log_dir, exist_ok=True)
@@ -42,8 +45,9 @@ logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s [%(levelname)s] [%(name)s] %(message)s',
     handlers=[
-        logging.StreamHandler(sys.stdout),  # 控制台输出
-        logging.FileHandler(log_file, encoding='utf-8')  # 文件输出
+        # ❌ 移除 StreamHandler - logging 不再输出到控制台
+        # ✅ 只保留 FileHandler - 所有日志只写入文件
+        logging.FileHandler(log_file, encoding='utf-8')
     ]
 )
 logger = logging.getLogger(__name__)
@@ -54,6 +58,18 @@ logging.getLogger('asyncio').setLevel(logging.CRITICAL)
 
 # 加载环境变量
 load_dotenv()
+
+
+def qt_message_handler(msg_type, context, message):
+    """
+    Qt 消息处理器（捕获 Qt 警告并过滤）
+    """
+    # 过滤掉跨屏幕几何警告（Qt 在 Windows 上的已知问题）
+    if "setGeometry" in message and "Unable to set geometry" in message:
+        return  # 忽略这类警告
+
+    # 其他 Qt 警告可以记录到日志（可选）
+    # logger.warning(f"[Qt] {message}")
 
 
 class TranslationSignals(QObject):
@@ -68,9 +84,9 @@ class MeetingTranslatorApp(QWidget):
     def __init__(self):
         super().__init__()
 
-        # 获取翻译服务提供商（默认 aliyun）
-        self.provider = os.getenv("TRANSLATION_PROVIDER", "aliyun").lower()
-        logger.info(f"翻译服务提供商: {self.provider}")
+        # 获取翻译服务提供商（将从 UI 选择器获取，默认 aliyun）
+        self.provider = "aliyun"  # 初始默认值
+        logger.info(f"翻译服务提供商初始值: {self.provider} (将从UI更新)")
 
         # API Key 将由 TranslationClientFactory 根据 provider 自动加载
         # 这样可以确保每个提供商使用正确的 API Key
@@ -95,6 +111,9 @@ class MeetingTranslatorApp(QWidget):
         # 字幕窗口
         self.subtitle_window = None
 
+        # 初始化 OutputManager
+        self._init_output_manager()
+
         # 信号
         self.signals = TranslationSignals()
         self.signals.translation_received.connect(self.on_translation_received)
@@ -118,6 +137,57 @@ class MeetingTranslatorApp(QWidget):
 
         # 配置加载完成，允许自动保存
         self.is_loading_config = False
+
+    def _init_output_manager(self):
+        """初始化 OutputManager 并添加 handlers"""
+        manager = OutputManager.get_instance()
+
+        # 1. 添加控制台处理器（只显示翻译结果和错误，隐藏状态信息）
+        console_handler = ConsoleHandler(
+            enabled_types=[
+                MessageType.TRANSLATION,  # ✅ 显示最终翻译
+                MessageType.ERROR,        # ✅ 显示错误
+                MessageType.WARNING       # ✅ 显示警告
+                # ❌ 不包含 STATUS - 状态信息不显示在控制台
+                # ❌ 不包含 DEBUG - Token 用量不显示
+            ]
+        )
+        manager.add_handler(console_handler)
+
+        # 2. 添加日志文件处理器（记录到文件，不显示在控制台）
+        log_file_handler = LogFileHandler(
+            logger_name="meeting_translator",
+            enabled_types=[
+                MessageType.TRANSLATION,      # ✅ 翻译结果（完整记录）
+                # ❌ 不包含 PARTIAL_REPLACE/PARTIAL_APPEND - 增量翻译不记录
+                MessageType.STATUS,           # ✅ 状态信息
+                MessageType.ERROR,            # ✅ 错误
+                MessageType.WARNING,          # ✅ 警告
+                MessageType.DEBUG             # ✅ 调试信息（Token 用量等）
+            ]
+        )
+        manager.add_handler(log_file_handler)
+
+        # 注意：SubtitleHandler 会在字幕窗口创建后添加
+        # （见 start_listen_translation 方法）
+
+    def _update_subtitle_handler(self):
+        """更新或创建 SubtitleHandler"""
+        manager = OutputManager.get_instance()
+
+        # 如果字幕窗口已存在，添加 SubtitleHandler
+        if self.subtitle_window:
+            # 检查是否已有 SubtitleHandler
+            has_subtitle_handler = any(
+                isinstance(h, SubtitleHandler) for h in manager.handlers
+            )
+
+            if not has_subtitle_handler:
+                # 创建 SubtitleHandler，self 作为 parent（确保正确的线程亲和性）
+                subtitle_handler = SubtitleHandler(self.subtitle_window)
+                subtitle_handler.moveToThread(self.thread())  # 确保在主线程
+                manager.add_handler(subtitle_handler)
+                logger.info("已添加 SubtitleHandler 到 OutputManager")
 
     @staticmethod
     def get_virtual_audio_device_name():
@@ -196,6 +266,29 @@ class MeetingTranslatorApp(QWidget):
         mode_layout.addWidget(self.mode_combo, 1)
         mode_group.setLayout(mode_layout)
         layout.addWidget(mode_group)
+
+        # 1.5. API提供商选择组
+        provider_group = QGroupBox("🌐 API 提供商")
+        provider_layout = QHBoxLayout()
+
+        provider_label = QLabel("选择翻译服务:")
+        provider_label.setObjectName("subtitleLabel")
+        provider_layout.addWidget(provider_label)
+
+        self.provider_combo = QComboBox()
+        self.provider_combo.addItem("阿里云 Qwen (Alibaba Cloud)", "aliyun")
+        self.provider_combo.addItem("豆包 Doubao (ByteDance)", "doubao")
+        self.provider_combo.addItem("OpenAI Realtime", "openai")
+        self.provider_combo.currentIndexChanged.connect(self.on_provider_changed)
+        provider_layout.addWidget(self.provider_combo, 1)
+
+        # 显示当前选择
+        self.provider_info = QLabel("当前: 阿里云 Qwen")
+        self.provider_info.setObjectName("deviceInfoLabel")
+        provider_layout.addWidget(self.provider_info)
+
+        provider_group.setLayout(provider_layout)
+        layout.addWidget(provider_group)
 
         # 2. 音频设备选择组
         device_group = QGroupBox("🎧 音频设备")
@@ -392,6 +485,26 @@ class MeetingTranslatorApp(QWidget):
             if not self.is_loading_config:
                 self.config_manager.set_voice(voice)
 
+    def on_provider_changed(self, index):
+        """API提供商切换事件"""
+        new_provider = self.provider_combo.itemData(index)
+        if new_provider and new_provider != self.provider:
+            old_provider = self.provider
+            self.provider = new_provider
+
+            # 更新显示
+            provider_name = self.provider_combo.currentText()
+            self.provider_info.setText(f"当前: {provider_name}")
+
+            logger.info(f"API提供商切换: {old_provider} -> {self.provider}")
+
+            # 重新加载该提供商支持的语音音色
+            self._load_provider_voices()
+
+            # 保存配置（仅在非加载期间）
+            if not self.is_loading_config:
+                self.config_manager.set_provider(self.provider)
+
     def load_devices(self):
         """加载音频设备列表"""
         # 1. 加载听模式设备（输入设备，优先 WASAPI Loopback）
@@ -504,13 +617,23 @@ class MeetingTranslatorApp(QWidget):
         logger.info("开始加载上次保存的配置...")
 
         # 显示所有配置项（用于调试）
+        logger.info(f"  Provider: {self.config_manager.get_provider()}")
         logger.info(f"  模式: {self.config_manager.get_mode()}")
         logger.info(f"  听模式设备: {self.config_manager.get_listen_device_name()}")
         logger.info(f"  说模式输入: {self.config_manager.get_speak_input_device_name()}")
         logger.info(f"  说模式输出: {self.config_manager.get_speak_output_device_name()}")
         logger.info(f"  语音音色: {self.config_manager.get_voice()}")
 
-        # 1. 恢复翻译模式
+        # 1. 恢复 API 提供商
+        saved_provider = self.config_manager.get_provider()
+        for i in range(self.provider_combo.count()):
+            provider = self.provider_combo.itemData(i)
+            if provider == saved_provider:
+                self.provider_combo.setCurrentIndex(i)
+                logger.info(f"✓ 恢复 API 提供商: {saved_provider}")
+                break
+
+        # 2. 恢复翻译模式
         saved_mode = self.config_manager.get_mode()
         for i in range(self.mode_combo.count()):
             mode = self.mode_combo.itemData(i)
@@ -567,8 +690,6 @@ class MeetingTranslatorApp(QWidget):
             import sys
             sys.stdout.flush()
             sys.stderr.flush()
-            print("[TOGGLE] Translation stopped successfully")
-            logger.info("[TOGGLE] toggle_translation completed successfully")
 
     def start_translation(self):
         """启动翻译（根据模式）"""
@@ -636,6 +757,9 @@ class MeetingTranslatorApp(QWidget):
         if not self.subtitle_window:
             self.subtitle_window = SubtitleWindow()
         self.subtitle_window.show()
+
+        # 2. 添加 SubtitleHandler 到 OutputManager
+        self._update_subtitle_handler()
 
         # 2. 启动翻译服务（英→中，仅字幕）
         self.listen_translation_service = MeetingTranslationServiceWrapper(
@@ -1004,6 +1128,9 @@ def exception_hook(exc_type, exc_value, exc_traceback):
 
 def main():
     """主函数"""
+    # 安装 Qt 消息处理器（过滤跨屏幕警告等）
+    qInstallMessageHandler(qt_message_handler)
+
     # 安装全局异常处理钩子
     sys.excepthook = exception_hook
 

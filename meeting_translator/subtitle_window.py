@@ -4,7 +4,7 @@
 支持历史记录和滚动
 """
 
-from PyQt5.QtWidgets import QWidget, QVBoxLayout, QLabel, QSizeGrip, QTextEdit
+from PyQt5.QtWidgets import QWidget, QVBoxLayout, QLabel, QSizeGrip, QTextEdit, QApplication
 from PyQt5.QtCore import Qt, QPoint, QSize
 from PyQt5.QtGui import QFont, QColor, QPalette, QTextCursor
 import logging
@@ -34,6 +34,7 @@ class SubtitleWindow(QWidget):
         self.meeting_start_time = datetime.now()  # 记录会议开始时间
         self.subtitle_history = []  # 字幕历史记录
         self.current_partial_text = ""  # 当前正在显示的增量文本（未finalize）
+        self.current_predicted_text = ""  # 当前正在显示的预测文本（stash部分）
 
         # 初始化 UI
         self.init_ui()
@@ -101,7 +102,8 @@ class SubtitleWindow(QWidget):
 
         self.setLayout(layout)
 
-    def update_subtitle(self, source_text: str, target_text: str, is_final: bool = True):
+    def update_subtitle(self, source_text: str, target_text: str, is_final: bool = True,
+                       predicted_text: str = None):
         """
         更新字幕内容
 
@@ -109,6 +111,7 @@ class SubtitleWindow(QWidget):
             source_text: 源语言文本（英文）
             target_text: 目标语言文本（中文）
             is_final: 是否为最终文本（True=已finalize，False=增量文本）
+            predicted_text: 预测文本（Qwen API的stash部分，可选）
         """
         if not target_text:
             return
@@ -119,8 +122,9 @@ class SubtitleWindow(QWidget):
             formatted_text = f"[{timestamp}] {target_text}"
             self.subtitle_history.append(formatted_text)
 
-            # 清空当前增量文本
+            # 清空当前增量文本和预测文本
             self.current_partial_text = ""
+            self.current_predicted_text = ""
 
             # 重新渲染所有内容
             self._render_subtitles()
@@ -129,9 +133,10 @@ class SubtitleWindow(QWidget):
         else:
             # 增量文本：临时显示在最后一行
             self.current_partial_text = target_text
+            self.current_predicted_text = predicted_text or ""  # 保存预测文本
             self._render_subtitles()
 
-            logger.debug(f"增量字幕: {target_text}")
+            logger.debug(f"增量字幕: {target_text} (预测: {predicted_text or '无'})")
 
     def _render_subtitles(self):
         """渲染所有字幕（历史记录 + 当前增量）"""
@@ -146,20 +151,11 @@ class SubtitleWindow(QWidget):
         if self.current_partial_text:
             timestamp = datetime.now().strftime("%H:%M:%S")
 
-            # 解析增量文本：区分已确定部分和预测部分
-            # 格式：已确定文本【预测:预测文本】
-            import re
-            match = re.match(r'^(.*?)【预测:(.*?)】$', self.current_partial_text)
-
-            if match:
-                # 有预测部分
-                confirmed = match.group(1)
-                predicted = match.group(2)
-
-                # 已确定部分：白色，预测部分：灰色
+            if self.current_predicted_text:
+                # 有预测部分：已确定文本（深色）+ 预测文本（浅色）
                 html_parts.append(f'''
                     <p style="color: rgba(255, 255, 255, 0.95); margin: 5px 0;">
-                        [{timestamp}] {self._escape_html(confirmed)}<span style="color: rgba(160, 160, 160, 0.85);">{self._escape_html(predicted)}</span> <span style="color: rgba(100, 150, 255, 0.8);">...</span>
+                        [{timestamp}] {self._escape_html(self.current_partial_text)}<span style="color: rgba(160, 160, 160, 0.85);">{self._escape_html(self.current_predicted_text)}</span> <span style="color: rgba(100, 150, 255, 0.8);">...</span>
                     </p>
                 ''')
             else:
@@ -195,6 +191,7 @@ class SubtitleWindow(QWidget):
         """清空字幕"""
         self.subtitle_history.clear()
         self.current_partial_text = ""
+        self.current_predicted_text = ""
         self.subtitle_text.clear()
         self.meeting_start_time = datetime.now()  # 重置开始时间
         logger.info("字幕已清空")
@@ -259,9 +256,14 @@ class SubtitleWindow(QWidget):
     def mouseMoveEvent(self, event):
         """鼠标移动事件"""
         if event.buttons() == Qt.LeftButton and self.drag_position:
-            # 移动窗口
+            # 移动窗口（允许跨显示器拖动）
             self.move(event.globalPos() - self.drag_position)
             event.accept()
+
+    def moveEvent(self, event):
+        """窗口移动事件（处理跨显示器情况）"""
+        # 调用父类方法
+        super().moveEvent(event)
 
     def mouseReleaseEvent(self, event):
         """鼠标释放事件"""

@@ -48,6 +48,7 @@ class ConfigManager:
     def _get_default_config(self) -> Dict[str, Any]:
         """获取默认配置"""
         return {
+            "provider": "aliyun",  # aliyun / doubao / openai
             "mode": "LISTEN",  # LISTEN / SPEAK / BIDIRECTIONAL
             "listen_device_name": None,
             "speak_input_device_name": None,
@@ -79,6 +80,15 @@ class ConfigManager:
     def set_mode(self, mode: str):
         """设置翻译模式"""
         self.config["mode"] = mode
+        self.save_config()
+
+    def get_provider(self) -> str:
+        """获取API提供商"""
+        return self.config.get("provider", "aliyun")
+
+    def set_provider(self, provider: str):
+        """设置API提供商"""
+        self.config["provider"] = provider
         self.save_config()
 
     def get_listen_device_name(self) -> Optional[str]:

@@ -359,6 +359,13 @@ class MeetingTranslationServiceWrapper:
     在独立线程中运行异步事件循环
     """
 
+    def __del__(self):
+        """析构函数"""
+        logger.info(f"[__DEL__] MeetingTranslationServiceWrapper being destroyed")
+        import sys
+        sys.stdout.flush()
+        sys.stderr.flush()
+
     def __init__(
         self,
         api_key: str,
@@ -534,6 +541,14 @@ class MeetingTranslationServiceWrapper:
             self.thread = None
 
             logger.info("[STOP-9] 翻译服务包装器已停止")
+
+            # 延迟一下，看看析构函数何时被调用
+            import time
+            logger.info("[STOP-10] Waiting 1 second before return...")
+            for handler in logging.getLogger().handlers:
+                handler.flush()
+            time.sleep(1)
+            logger.info("[STOP-11] Returning from stop() method")
 
         except Exception as e:
             logger.critical(f"[STOP-CRITICAL] stop()方法发生严重错误: {e}", exc_info=True)

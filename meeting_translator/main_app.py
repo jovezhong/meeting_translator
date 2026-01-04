@@ -817,12 +817,15 @@ class MeetingTranslatorApp(QWidget):
 
             try:
                 if self.listen_translation_service:
-                    logger.debug("正在停止听模式翻译服务...")
+                    logger.info("[STOP] 准备停止听模式翻译服务...")
                     self.listen_translation_service.stop()
+                    logger.info("[STOP] 听模式翻译服务stop()调用完成")
                     self.listen_translation_service = None
-                    logger.debug("听模式翻译服务已停止")
+                    logger.info("[STOP] 听模式翻译服务引用已清除")
+                else:
+                    logger.info("[STOP] 听模式翻译服务为None，跳过")
             except Exception as e:
-                logger.error(f"停止翻译服务时出错: {e}", exc_info=True)
+                logger.error(f"[STOP-ERROR] 停止翻译服务时出错: {e}", exc_info=True)
 
             # 3. 停止说模式
             try:

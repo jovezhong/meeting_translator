@@ -462,6 +462,11 @@ class MeetingTranslationServiceWrapper:
 
     def stop(self):
         """停止翻译服务（同步方法）"""
+        # 立即flush日志，确保能看到进入stop方法
+        logger.info("[STOP-ENTRY] Entering stop() method")
+        for handler in logging.getLogger().handlers:
+            handler.flush()
+
         if not self.is_running:
             logger.debug("翻译服务已经停止，跳过")
             return
@@ -469,6 +474,10 @@ class MeetingTranslationServiceWrapper:
         try:
             logger.info("[STOP-1] 正在停止翻译服务...")
             self.is_running = False
+            logger.info("[STOP-1.5] is_running set to False")
+            # 再次flush
+            for handler in logging.getLogger().handlers:
+                handler.flush()
 
             # 1. 停止翻译服务并等待完成
             if self.service and self.loop:

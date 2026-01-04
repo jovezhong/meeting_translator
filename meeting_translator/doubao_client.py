@@ -223,6 +223,24 @@ class DoubaoClient(BaseTranslationClient):
             print(f"[ERROR] Doubao session configuration failed: {e}")
             raise
 
+    async def send_keepalive(self):
+        """发送空包作为keepalive，测试是否能保持session活跃"""
+        if not self.is_connected or not self.ws:
+            return False
+
+        try:
+            print(f"[KEEPALIVE] Sending empty packet as keepalive")
+            request = TranslateRequest()
+            request.request_meta.SessionID = self.session_id
+            request.event = Type.TaskRequest
+            request.source_audio.binary_data = b""  # 空字节
+
+            await self.ws.send(request.SerializeToString())
+            return True
+        except Exception as e:
+            print(f"[ERROR] Failed to send keepalive: {e}")
+            return False
+
     async def send_audio_chunk(self, audio_data: bytes):
         """Send audio data chunk for translation"""
         if not self.is_connected or not self.ws:
@@ -242,7 +260,13 @@ class DoubaoClient(BaseTranslationClient):
             request = TranslateRequest()
             request.request_meta.SessionID = self.session_id
             request.event = Type.TaskRequest
-            request.source_audio.binary_data = audio_data
+
+            # 测试：如果音频数据为空，发送空包作为keepalive
+            if len(audio_data) == 0:
+                print(f"[TEST] Sending EMPTY audio chunk as keepalive")
+                request.source_audio.binary_data = b""  # 空字节
+            else:
+                request.source_audio.binary_data = audio_data
 
             await self.ws.send(request.SerializeToString())
 

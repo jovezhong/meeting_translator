@@ -180,8 +180,8 @@ class MeetingTranslationService:
         运行消息处理循环，带自动重连功能
         当检测到连接断开时，会自动尝试重连
         """
-        reconnect_delay = 2  # 重连延迟（秒）
-        max_reconnect_attempts = 3  # 最大重连次数
+        reconnect_delay = 1  # 重连延迟（秒）- 减少到1秒加快重连
+        max_reconnect_attempts = 5  # 最大重连次数 - 增加到5次（session timeout是常见情况）
         reconnect_count = 0
 
         while self.is_running:
@@ -228,7 +228,7 @@ class MeetingTranslationService:
 
                     # 重新连接
                     await self.client.connect()
-                    logger.info("重连成功")
+                    logger.info("重连成功（自动）")
 
                     # 重置重连计数
                     reconnect_count = 0
@@ -241,13 +241,8 @@ class MeetingTranslationService:
                         # 启动新的转发线程
                         self._start_audio_forwarding()
 
-                    # 通知用户重连成功
-                    if self.on_translation:
-                        self.on_translation(
-                            "",
-                            "[提示] 连接已恢复",
-                            is_final=True
-                        )
+                    # 不显示"连接已恢复"消息（对于timeout这种正常情况，用户不需要知道）
+                    # session timeout是Doubao API的正常行为，当没有音频输入时会超时
 
                 else:
                     # 正常退出

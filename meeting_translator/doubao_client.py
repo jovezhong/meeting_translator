@@ -320,6 +320,8 @@ class DoubaoClient(BaseTranslationClient):
         if not self.is_connected:
             return
 
+        self.is_connected = False
+
         try:
             # Send FinishSession request
             if self.ws and self.session_id:
@@ -327,17 +329,37 @@ class DoubaoClient(BaseTranslationClient):
                 request.request_meta.SessionID = self.session_id
                 request.event = Type.FinishSession
 
-                await self.ws.send(request.SerializeToString())
+                await asyncio.wait_for(self.ws.send(request.SerializeToString()), timeout=1.0)
                 print("[OK] Doubao FinishSession request sent")
 
+        except asyncio.TimeoutError:
+            print("[WARN] FinishSession request timeout")
         except Exception as e:
             print(f"[WARN] Error sending FinishSession: {e}")
 
-        # Close WebSocket
+        # Close WebSocket with timeout
         if self.ws:
-            await self.ws.close()
-            self.is_connected = False
-            print("[OK] Doubao connection closed")
+            try:
+                await asyncio.wait_for(self.ws.close(), timeout=2.0)
+            except asyncio.TimeoutError:
+                print("[WARN] WebSocket close timeout")
+            except Exception as e:
+                print(f"[WARN] Error closing WebSocket: {e}")
+            finally:
+                self.ws = None
+
+        # Clear audio queue to prevent buffered audio from playing
+        cleared = 0
+        while not self.audio_playback_queue.empty():
+            try:
+                self.audio_playback_queue.get_nowait()
+                cleared += 1
+            except:
+                break
+        if cleared > 0:
+            print(f"[DEBUG] Cleared {cleared} audio chunks from Doubao queue")
+
+        print("[OK] Doubao connection closed")
 
         # Stop audio player
         if self.audio_player_thread and self.audio_player_thread.is_alive():

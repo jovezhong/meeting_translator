@@ -347,9 +347,15 @@ class DoubaoClient(BaseTranslationClient):
         # Close WebSocket with timeout
         if self.ws:
             try:
-                await asyncio.wait_for(self.ws.close(), timeout=2.0)
+                # Close with shorter timeout to avoid hanging
+                await asyncio.wait_for(self.ws.close(), timeout=1.0)
+                await asyncio.sleep(0.1)  # Give time for cleanup
             except asyncio.TimeoutError:
                 print("[WARN] WebSocket close timeout")
+            except RuntimeError as e:
+                # Suppress "no running event loop" errors during shutdown
+                if "event loop" not in str(e).lower():
+                    print(f"[WARN] Error closing WebSocket: {e}")
             except Exception as e:
                 print(f"[WARN] Error closing WebSocket: {e}")
             finally:

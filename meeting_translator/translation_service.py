@@ -436,16 +436,23 @@ class MeetingTranslationServiceWrapper:
             except Exception as e:
                 logger.warning(f"停止翻译服务时出错: {e}")
 
-        # 2. 取消所有剩余任务
+        # 2. 给剩余任务时间自然完成（特别是WebSocket关闭）
         if self.loop and self.loop.is_running():
             try:
-                # 获取所有待处理的任务并取消
+                import time
+                time.sleep(0.5)  # 给WebSocket关闭500ms时间
+
+                # 获取所有待处理的任务
                 pending = asyncio.all_tasks(self.loop)
-                for task in pending:
-                    task.cancel()
-                logger.debug(f"已取消 {len(pending)} 个待处理任务")
+                if pending:
+                    logger.debug(f"仍有 {len(pending)} 个待处理任务，正在取消...")
+                    for task in pending:
+                        task.cancel()
+
+                    # 给任务取消一点时间
+                    time.sleep(0.2)
             except Exception as e:
-                logger.debug(f"取消任务时出错: {e}")
+                logger.debug(f"处理剩余任务时出错: {e}")
 
         # 3. 停止事件循环
         if self.loop and self.loop.is_running():

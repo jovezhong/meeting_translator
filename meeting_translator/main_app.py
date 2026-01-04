@@ -49,6 +49,9 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 logger.info(f"日志文件: {log_file}")
 
+# 降低asyncio警告级别（抑制WebSocket关闭时的警告）
+logging.getLogger('asyncio').setLevel(logging.CRITICAL)
+
 # 加载环境变量
 load_dotenv()
 
@@ -975,6 +978,11 @@ def main():
     """主函数"""
     # 安装全局异常处理钩子
     sys.excepthook = exception_hook
+
+    # 抑制WebSocket关闭时的事件循环警告（不影响功能）
+    import warnings
+    warnings.filterwarnings("ignore", message=".*coroutine.*WebSocketCommonProtocol.close_connection.*")
+    warnings.filterwarnings("ignore", message=".*Task was destroyed but it is pending.*")
 
     try:
         app = QApplication(sys.argv)

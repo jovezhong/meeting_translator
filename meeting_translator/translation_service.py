@@ -498,57 +498,32 @@ class MeetingTranslationServiceWrapper:
                 except Exception as e:
                     logger.warning(f"[STOP-ERROR] 停止翻译服务时出错: {e}", exc_info=True)
 
-            # 2. 给剩余任务时间自然完成（特别是WebSocket关闭）
+            # 2. 停止事件循环（不要调用loop.stop，让is_running标志自然结束）
+            # 重要：不调用loop.stop()，避免daemon线程在事件循环操作中崩溃
             if self.loop and self.loop.is_running():
-                try:
-                    logger.debug("[STOP-4] 等待剩余任务完成...")
-                    import time
-                    time.sleep(0.2)  # 减少等待时间到200ms
+                logger.debug("[STOP-4] 设置is_running=False，让事件循环自然退出...")
+                # service.is_running已经在前面设置为False了
+                # 这会让_run_with_auto_reconnect自然退出
+                pass
 
-                    # 获取所有待处理的任务
-                    pending = asyncio.all_tasks(self.loop)
-                    if pending:
-                        logger.debug(f"[STOP-5] 仍有 {len(pending)} 个待处理任务，正在取消...")
-                        for task in pending:
-                            task.cancel()
-                        # 给任务取消一点时间
-                        time.sleep(0.1)
-                except Exception as e:
-                    logger.warning(f"[STOP-ERROR] 处理剩余任务时出错: {e}", exc_info=True)
-
-            # 3. 停止事件循环
-            if self.loop and self.loop.is_running():
-                logger.debug("[STOP-6] 停止事件循环...")
-                try:
-                    self.loop.call_soon_threadsafe(self.loop.stop)
-                except Exception as e:
-                    logger.warning(f"[STOP-ERROR] 停止事件循环时出错: {e}", exc_info=True)
-
-            # 4. 等待线程结束
+            # 3. 等待线程结束（不强制join）
             if self.thread and self.thread.is_alive():
-                logger.debug("[STOP-7] 等待服务线程结束...")
-                self.thread.join(timeout=2)  # 减少到2秒
+                logger.debug("[STOP-5] 等待服务线程自然结束（最多3秒）...")
+                self.thread.join(timeout=3)
                 if self.thread.is_alive():
-                    logger.warning("[STOP-ERROR] 翻译服务线程未能在 2 秒内结束")
+                    logger.warning("[STOP-WARN] 翻译服务线程未能在 3 秒内结束（daemon线程将被强制终止）")
 
-            # 5. 清理事件循环（注意：不在这里close，让GC处理）
+            # 4. 清理事件循环
             if self.loop:
-                logger.debug("[STOP-8] 清理事件循环引用...")
+                logger.debug("[STOP-6] 清理事件循环引用...")
                 self.loop = None
 
-            # 6. 清理服务对象
+            # 5. 清理服务对象
             self.service = None
             self.thread = None
 
-            logger.info("[STOP-9] 翻译服务包装器已停止")
-
-            # 延迟一下，看看析构函数何时被调用
-            import time
-            logger.info("[STOP-10] Waiting 1 second before return...")
-            for handler in logging.getLogger().handlers:
-                handler.flush()
-            time.sleep(1)
-            logger.info("[STOP-11] Returning from stop() method")
+            logger.info("[STOP-7] 翻译服务包装器已停止")
+            # 注意：不添加sleep，让方法立即返回
 
         except Exception as e:
             logger.critical(f"[STOP-CRITICAL] stop()方法发生严重错误: {e}", exc_info=True)

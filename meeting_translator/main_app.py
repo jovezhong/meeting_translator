@@ -568,15 +568,7 @@ class MeetingTranslatorApp(QWidget):
             sys.stdout.flush()
             sys.stderr.flush()
             print("[TOGGLE] Translation stopped successfully")
-
-            # 延迟一下，看看程序何时退出
-            logger.info("[TOGGLE] Waiting 2 seconds to see if program crashes...")
-            for handler in logging.getLogger().handlers:
-                handler.flush()
-            import time
-            time.sleep(2)
-            logger.info("[TOGGLE] Still alive after 2 seconds!")
-            print("[TOGGLE] Program is still running")
+            logger.info("[TOGGLE] toggle_translation completed successfully")
 
     def start_translation(self):
         """启动翻译（根据模式）"""

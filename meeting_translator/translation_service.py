@@ -498,18 +498,22 @@ class MeetingTranslationServiceWrapper:
                 except Exception as e:
                     logger.warning(f"[STOP-ERROR] 停止翻译服务时出错: {e}", exc_info=True)
 
-            # 2. 停止事件循环（不要调用loop.stop，让is_running标志自然结束）
-            # 重要：需要先关闭WebSocket，让recv()调用抛出异常
+            # 2. 设置标志并触发WebSocket关闭，让handle_server_messages退出
             if self.service and hasattr(self.service, 'client'):
-                logger.debug("[STOP-4] 关闭WebSocket连接...")
-                try:
-                    # 使用asyncio在事件循环中关闭WebSocket
-                    asyncio.run_coroutine_threadsafe(
-                        self.service.client.close(),
-                        self.loop
-                    )
-                except Exception as e:
-                    logger.debug(f"[STOP-DEBUG] 关闭WebSocket时出错（可忽略）: {e}")
+                logger.info("[STOP-4] 关闭client连接...")
+                self.service.client.is_connected = False
+
+                # 尝试关闭WebSocket（fire-and-forget，不等待结果）
+                if hasattr(self.service.client, 'ws') and self.service.client.ws:
+                    try:
+                        # 使用asyncio创建关闭任务，但不等待
+                        asyncio.run_coroutine_threadsafe(
+                            self.service.client.ws.close(),
+                            self.loop
+                        )
+                        logger.info("[STOP-4] WebSocket.close()已调用（不等待）")
+                    except Exception as e:
+                        logger.debug(f"[STOP-DEBUG] 调用WebSocket.close()出错: {e}")
 
             if self.loop and self.loop.is_running():
                 logger.debug("[STOP-5] 设置is_running=False，让事件循环自然退出...")

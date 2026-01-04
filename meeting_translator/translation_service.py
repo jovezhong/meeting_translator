@@ -499,30 +499,43 @@ class MeetingTranslationServiceWrapper:
                     logger.warning(f"[STOP-ERROR] 停止翻译服务时出错: {e}", exc_info=True)
 
             # 2. 停止事件循环（不要调用loop.stop，让is_running标志自然结束）
-            # 重要：不调用loop.stop()，避免daemon线程在事件循环操作中崩溃
+            # 重要：需要先关闭WebSocket，让recv()调用抛出异常
+            if self.service and hasattr(self.service, 'client'):
+                logger.debug("[STOP-4] 关闭WebSocket连接...")
+                try:
+                    # 使用asyncio在事件循环中关闭WebSocket
+                    asyncio.run_coroutine_threadsafe(
+                        self.service.client.close(),
+                        self.loop
+                    )
+                except Exception as e:
+                    logger.debug(f"[STOP-DEBUG] 关闭WebSocket时出错（可忽略）: {e}")
+
             if self.loop and self.loop.is_running():
-                logger.debug("[STOP-4] 设置is_running=False，让事件循环自然退出...")
+                logger.debug("[STOP-5] 设置is_running=False，让事件循环自然退出...")
                 # service.is_running已经在前面设置为False了
                 # 这会让_run_with_auto_reconnect自然退出
                 pass
 
             # 3. 等待线程结束（不强制join）
             if self.thread and self.thread.is_alive():
-                logger.debug("[STOP-5] 等待服务线程自然结束（最多3秒）...")
+                logger.debug("[STOP-6] 等待服务线程自然结束（最多3秒）...")
                 self.thread.join(timeout=3)
                 if self.thread.is_alive():
                     logger.warning("[STOP-WARN] 翻译服务线程未能在 3 秒内结束（daemon线程将被强制终止）")
+                else:
+                    logger.debug("[STOP-6] 服务线程已结束")
 
             # 4. 清理事件循环
             if self.loop:
-                logger.debug("[STOP-6] 清理事件循环引用...")
+                logger.debug("[STOP-7] 清理事件循环引用...")
                 self.loop = None
 
             # 5. 清理服务对象
             self.service = None
             self.thread = None
 
-            logger.info("[STOP-7] 翻译服务包装器已停止")
+            logger.info("[STOP-8] 翻译服务包装器已停止")
             # 注意：不添加sleep，让方法立即返回
 
         except Exception as e:

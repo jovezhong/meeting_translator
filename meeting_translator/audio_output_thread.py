@@ -113,28 +113,32 @@ class AudioOutputThread:
         logger.info("停止音频输出线程...")
         self.is_running = False
 
+        # 清空队列中的未播放数据，避免停止时播放积压内容
+        while not self.audio_queue.empty():
+            try:
+                self.audio_queue.get_nowait()
+            except queue.Empty:
+                break
+
         # 发送终止信号
         try:
             self.audio_queue.put(None, timeout=0.5)
         except queue.Full:
             pass
 
-        if self.thread:
+        # 等待线程结束（最多2秒）
+        if self.thread and self.thread.is_alive():
+            logger.debug("等待音频输出线程退出...")
             self.thread.join(timeout=2)
 
-        # 清理资源
-        if self.stream:
-            try:
-                self.stream.stop_stream()
-                self.stream.close()
-            except Exception as e:
-                logger.debug(f"关闭输出流时出错: {e}")
-
-        if self.pyaudio_instance:
-            try:
-                self.pyaudio_instance.terminate()
-            except Exception as e:
-                logger.debug(f"终止 PyAudio 时出错: {e}")
+        # ⚠️ 关键：不主动关闭stream和pyaudio
+        # 原因：
+        # 1. daemon线程可能还在等待音频数据，无法及时退出
+        # 2. 如果daemon线程还在使用stream，调用close()会导致程序崩溃
+        # 3. Python GC会在对象引用清零后自动清理资源
+        self.stream = None
+        self.pyaudio_instance = None
+        logger.debug("音频流和PyAudio引用已清除（交给GC清理）")
 
         logger.info("音频输出线程已停止")
 
@@ -235,9 +239,6 @@ class AudioOutputThread:
         """
         if not self.is_running:
             return
-
-        # 注意：为了性能，直接入队原始 24kHz 数据
-        # WSOLA 和重采样都在 _output_loop 中批量处理
 
         try:
             # 先尝试非阻塞写入

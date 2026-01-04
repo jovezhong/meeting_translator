@@ -49,6 +49,9 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 logger.info(f"日志文件: {log_file}")
 
+# 降低asyncio警告级别（抑制WebSocket关闭时的警告）
+logging.getLogger('asyncio').setLevel(logging.CRITICAL)
+
 # 加载环境变量
 load_dotenv()
 
@@ -558,7 +561,14 @@ class MeetingTranslatorApp(QWidget):
         if not self.is_running:
             self.start_translation()
         else:
+            logger.info("[TOGGLE] Calling stop_translation...")
             self.stop_translation()
+            logger.info("[TOGGLE] stop_translation returned!")
+            import sys
+            sys.stdout.flush()
+            sys.stderr.flush()
+            print("[TOGGLE] Translation stopped successfully")
+            logger.info("[TOGGLE] toggle_translation completed successfully")
 
     def start_translation(self):
         """启动翻译（根据模式）"""
@@ -680,10 +690,17 @@ class MeetingTranslatorApp(QWidget):
         # 使用自适应变速功能，在队列堆积时自动加速播放
         try:
             logger.info("正在创建音频输出线程...")
+            # 使用设备的实际采样率，避免音频失真
+            device_output_rate = output_device.get('sample_rate', 48000)
+
+            # Different providers output different sample rates
+            # Doubao: 16kHz, Aliyun/OpenAI: 24kHz
+            api_output_rate = 16000 if self.provider == "doubao" else 24000
+
             self.speak_audio_output = AudioOutputThread(
                 device_index=output_device['index'],
-                input_sample_rate=24000,  # API 输出 24kHz
-                output_sample_rate=24000,  # 直接使用 24kHz，避免重采样问题
+                input_sample_rate=api_output_rate,  # Match provider output rate
+                output_sample_rate=device_output_rate,  # 使用设备实际采样率
                 channels=1,
                 enable_dynamic_speed=True,  # 启用自适应变速
                 max_speed=2.0,  # 最高2倍速
@@ -781,81 +798,92 @@ class MeetingTranslatorApp(QWidget):
         """
         logger.info("停止翻译...")
 
-        # 1. 保存字幕（如果有内容）
-        if save_subtitles and self.subtitle_window:
+        try:
+            # 1. 保存字幕（如果有内容）
+            if save_subtitles and self.subtitle_window:
+                try:
+                    save_dir = os.path.join(os.path.expanduser("~"), "Documents", "会议记录")
+                    os.makedirs(save_dir, exist_ok=True)
+
+                    filepath = self.subtitle_window.save_subtitles(save_dir)
+                    if filepath:
+                        logger.info(f"✅ 字幕已保存: {filepath}")
+                        self.update_status(f"已保存到: {os.path.basename(filepath)}", "ready")
+                except Exception as e:
+                    logger.error(f"保存字幕失败: {e}", exc_info=True)
+
+            # 2. 停止听模式
             try:
-                save_dir = os.path.join(os.path.expanduser("~"), "Documents", "会议记录")
-                os.makedirs(save_dir, exist_ok=True)
-
-                filepath = self.subtitle_window.save_subtitles(save_dir)
-                if filepath:
-                    logger.info(f"✅ 字幕已保存: {filepath}")
-                    self.update_status(f"已保存到: {os.path.basename(filepath)}", "ready")
+                if self.listen_audio_capture:
+                    logger.debug("正在停止听模式音频捕获...")
+                    self.listen_audio_capture.stop()
+                    self.listen_audio_capture = None
+                    logger.debug("听模式音频捕获已停止")
             except Exception as e:
-                logger.error(f"保存字幕失败: {e}")
+                logger.error(f"停止音频捕获时出错: {e}", exc_info=True)
 
-        # 2. 停止听模式
-        try:
-            if self.listen_audio_capture:
-                self.listen_audio_capture.stop()
-                self.listen_audio_capture = None
+            try:
+                if self.listen_translation_service:
+                    self.listen_translation_service.stop()
+                    self.listen_translation_service = None
+            except Exception as e:
+                logger.error(f"停止听模式翻译服务时出错: {e}", exc_info=True)
+
+            # 3. 停止说模式
+            try:
+                if self.speak_audio_capture:
+                    self.speak_audio_capture.stop()
+                    self.speak_audio_capture = None
+            except Exception as e:
+                logger.error(f"停止说模式音频捕获时出错: {e}", exc_info=True)
+
+            try:
+                if self.speak_translation_service:
+                    self.speak_translation_service.stop()
+                    self.speak_translation_service = None
+            except Exception as e:
+                logger.error(f"停止说模式翻译服务时出错: {e}", exc_info=True)
+
+            try:
+                if self.speak_audio_output:
+                    self.speak_audio_output.stop()
+                    self.speak_audio_output = None
+            except Exception as e:
+                logger.error(f"停止音频输出时出错: {e}", exc_info=True)
+
+            # 4. 更新 UI
+            self.is_running = False
+
+            try:
+                self.start_btn.setText("▶️ 启动翻译")
+                self.start_btn.setObjectName("")  # 移除stopButton，恢复默认样式
+                # 强制重新应用样式
+                self.start_btn.style().unpolish(self.start_btn)
+                self.start_btn.style().polish(self.start_btn)
+
+                self.mode_combo.setEnabled(True)
+                self.listen_device_combo.setEnabled(True)
+                self.speak_input_combo.setEnabled(True)
+                self.speak_output_combo.setEnabled(True)
+                self.subtitle_btn.setEnabled(False)
+
+                if not save_subtitles:
+                    self.update_status("就绪", "ready")
+            except Exception as e:
+                logger.error(f"更新UI时出错: {e}", exc_info=True)
+
+            logger.info("翻译已停止")
+
         except Exception as e:
-            logger.error(f"停止音频捕获时出错: {e}")
-
-        try:
-            if self.listen_translation_service:
-                self.listen_translation_service.stop()
-                self.listen_translation_service = None
-        except Exception as e:
-            logger.error(f"停止翻译服务时出错: {e}")
-
-        # 3. 停止说模式
-        try:
-            if self.speak_audio_capture:
-                self.speak_audio_capture.stop()
-                self.speak_audio_capture = None
-        except Exception as e:
-            logger.error(f"停止说模式音频捕获时出错: {e}")
-
-        try:
-            if self.speak_translation_service:
-                self.speak_translation_service.stop()
-                self.speak_translation_service = None
-        except Exception as e:
-            logger.error(f"停止说模式翻译服务时出错: {e}")
-
-        try:
-            if self.speak_audio_output:
-                self.speak_audio_output.stop()
-                self.speak_audio_output = None
-        except Exception as e:
-            logger.error(f"停止音频输出时出错: {e}")
-
-        # 4. 更新 UI
-        self.is_running = False
-
-        try:
-            self.start_btn.setText("▶️ 启动翻译")
-            self.start_btn.setObjectName("")  # 移除stopButton，恢复默认样式
-            # 强制重新应用样式
-            self.start_btn.style().unpolish(self.start_btn)
-            self.start_btn.style().polish(self.start_btn)
-
-            self.mode_combo.setEnabled(True)
-            self.listen_device_combo.setEnabled(True)
-            self.speak_input_combo.setEnabled(True)
-            self.speak_output_combo.setEnabled(True)
-            self.subtitle_btn.setEnabled(False)
-
-            if not save_subtitles:
-                self.update_status("就绪", "ready")
-        except Exception as e:
-            logger.error(f"更新UI时出错: {e}")
-            import traceback
-            traceback.print_exc()
-
-        logger.info("翻译已停止")
-        logger.info(f"主窗口状态: visible={self.isVisible()}, enabled={self.isEnabled()}")
+            # 捕获整个stop_translation过程中的任何未捕获异常
+            logger.critical(f"stop_translation发生严重错误: {e}", exc_info=True)
+            # 确保UI状态正确
+            self.is_running = False
+            try:
+                self.start_btn.setText("▶️ 启动翻译")
+                self.mode_combo.setEnabled(True)
+            except:
+                pass
 
     def toggle_subtitle_window(self):
         """显示/隐藏字幕窗口"""
@@ -888,7 +916,11 @@ class MeetingTranslatorApp(QWidget):
             is_final: 是否为最终文本（True=已finalize，False=增量文本）
         """
         if is_final:
-            logger.info(f"翻译: {source_text} -> {target_text}")
+            # 如果 source_text 已经包含 "[译]" 前缀，则不重复显示
+            if source_text.startswith("[译]"):
+                logger.info(f"翻译: {target_text}")
+            else:
+                logger.info(f"翻译: {source_text} -> {target_text}")
         else:
             logger.debug(f"增量翻译: {target_text}")
 
@@ -937,7 +969,13 @@ class MeetingTranslatorApp(QWidget):
 
     def closeEvent(self, event):
         """关闭事件"""
-        logger.info("主窗口关闭事件被触发")
+        logger.info("=" * 60)
+        logger.info("[CLOSE-EVENT] 主窗口关闭事件被触发")
+        logger.info(f"[CLOSE-EVENT] is_running={self.is_running}")
+        logger.info("=" * 60)
+        import sys
+        sys.stdout.flush()
+        sys.stderr.flush()
 
         # 停止翻译
         self.stop_translation()
@@ -950,7 +988,7 @@ class MeetingTranslatorApp(QWidget):
         if self.device_manager:
             self.device_manager.cleanup()
 
-        logger.info("主窗口即将关闭")
+        logger.info("[CLOSE-EVENT] 主窗口即将关闭")
         event.accept()
 
 
@@ -968,6 +1006,11 @@ def main():
     """主函数"""
     # 安装全局异常处理钩子
     sys.excepthook = exception_hook
+
+    # 抑制WebSocket关闭时的事件循环警告（不影响功能）
+    import warnings
+    warnings.filterwarnings("ignore", message=".*coroutine.*WebSocketCommonProtocol.close_connection.*")
+    warnings.filterwarnings("ignore", message=".*Task was destroyed but it is pending.*")
 
     try:
         app = QApplication(sys.argv)

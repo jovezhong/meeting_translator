@@ -47,9 +47,9 @@ class TranslationClientFactory:
             ValueError: If provider is unsupported or API key is missing
         """
 
-        # Auto-detect provider from environment if not specified
+        # Use default provider if not specified (no longer reads from environment)
         if provider is None:
-            provider = os.getenv("TRANSLATION_PROVIDER", "aliyun").lower()
+            provider = "aliyun"
 
         provider = provider.lower()
 

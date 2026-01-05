@@ -17,6 +17,8 @@ class AudioPlayerMixin:
     - 音频播放线程管理
     - 音色选择
     - 音频队列管理
+    - 输出采样率配置
+    - 音色试听功能
 
     使用方法：
         class MyS2SClient(BaseTranslationClient, OutputMixin, AudioPlayerMixin):
@@ -45,6 +47,35 @@ class AudioPlayerMixin:
 
         # 调用下一个类的 __init__ (cooperative inheritance)
         super().__init__(*args, **kwargs)
+
+    @property
+    def output_rate(self) -> int:
+        """
+        Get output audio sample rate
+
+        Returns:
+            Sample rate in Hz for audio playback (e.g., 24000)
+
+        Note:
+            Subclass should override this to provide provider-specific rate.
+        """
+        raise NotImplementedError(
+            f"{self.__class__.__name__} 必须实现 output_rate property"
+        )
+
+    @classmethod
+    def get_supported_voices(cls) -> Dict[str, str]:
+        """
+        Get supported voices for this provider
+
+        Returns:
+            Dict mapping voice IDs to display names
+            Example: {"zhichu": "知楚 (女声)", "zhiyan": "知燕 (女声)"}
+
+        Note:
+            Subclass should override this to provide provider-specific voices.
+        """
+        return {}
 
     def start_audio_player(self):
         """

@@ -49,9 +49,10 @@ class OutputMixin:
             "audio_enabled": getattr(self, 'audio_enabled', True),
         }
 
-        # 添加音色信息（如果有）
-        if hasattr(self, 'voice') and self.voice:
-            metadata["voice"] = self.voice
+        # 添加音色信息（如果有，仅 S2S clients 会混入 AudioPlayerMixin）
+        voice = getattr(self, 'voice', None)
+        if voice:
+            metadata["voice"] = voice
 
         # 合并额外的 metadata
         if extra_metadata:

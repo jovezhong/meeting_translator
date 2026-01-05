@@ -89,11 +89,10 @@ class QwenClient(BaseTranslationClient, OutputMixin, AudioPlayerMixin):
     # 类属性，用于识别 provider
     provider = TranslationProvider.ALIYUN
 
-    # 支持的音色列表
+    # 支持的音色列表（来源：阿里云官方文档）
     SUPPORTED_VOICES = {
         "cherry": "Cherry (女声)",
-        "bella": "Bella (女声)",
-        "alice": "Alice (女声)",
+        "nofish": "Nofish (男声)",
     }
 
     def __init__(
@@ -113,7 +112,7 @@ class QwenClient(BaseTranslationClient, OutputMixin, AudioPlayerMixin):
             api_key: 阿里云 API Key
             source_language: 源语言 (zh/en/ja/ko/...)
             target_language: 目标语言 (en/zh/ja/ko/...)
-            voice: 音色选择 (cherry/bella/alice)，仅 S2S 模式有效
+            voice: 音色选择 (cherry/nofish)，仅 S2S 模式有效
             audio_enabled: 是否启用音频输出（True=S2S, False=S2T）
             glossary_file: 词汇表文件路径（可选）
             **kwargs: 其他参数

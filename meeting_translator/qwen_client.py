@@ -179,18 +179,13 @@ class QwenClient(BaseTranslationClient, OutputMixin, AudioPlayerMixin):
 
     async def configure_session(self):
         """配置翻译会话"""
-        # 根据 audio_enabled 设置 modalities
-        modalities = ["text", "audio"] if self.audio_enabled else ["text"]
-
         # 基础配置（S2T 模式）
         config = {
             "event_id": f"event_{int(time.time() * 1000)}",
             "type": "session.update",
             "session": {
-                "modalities": modalities,
-                "voice": self.voice if self.audio_enabled else "cherry",
+                "modalities": ["text"],  # S2T 模式：只有文本
                 "input_audio_format": "pcm16",
-                "output_audio_format": "pcm16" if self.audio_enabled else None,
                 "translation": {
                     "language": self.target_language,
                     "instructions": build_translation_instructions(self.glossary),
@@ -204,8 +199,11 @@ class QwenClient(BaseTranslationClient, OutputMixin, AudioPlayerMixin):
             }
         }
 
-        # S2S 模式：添加音频输出参数
+        # S2S 模式：override 为语音到语音
         if self.audio_enabled:
+            config["session"]["modalities"] = ["text", "audio"]
+            config["session"]["voice"] = self.voice
+            config["session"]["output_audio_format"] = "pcm16"
             config["session"]["audio"] = {
                 # 注意：rate 参数已确认无效，已移除
                 "pitch": 1.0,

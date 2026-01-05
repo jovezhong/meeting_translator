@@ -20,17 +20,24 @@ class AudioPlayerMixin:
 
     使用方法：
         class MyS2SClient(BaseTranslationClient, OutputMixin, AudioPlayerMixin):
-            pass
+            def __init__(self, voice="zhichu", **kwargs):
+                super().__init__(voice=voice, **kwargs)
     """
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, voice: Optional[str] = None, audio_enabled: bool = True, **kwargs):
         """
         初始化音频播放相关属性
 
-        注意：这个 mixin 期望在类的 __init__ 中被正确调用。
-        使用 cooperative multiple inheritance:
-            super().__init__(*args, **kwargs)
+        Args:
+            voice: 音色选择（provider-specific，如 "zhichu", "alloy"）
+            audio_enabled: 是否启用音频输出（默认 True）
+            *args: 传递给父类的位置参数
+            **kwargs: 传递给父类的关键字参数
         """
+        # 音频相关配置
+        self.voice = voice
+        self.audio_enabled = audio_enabled
+
         # 音频播放线程
         self._audio_thread: Optional[Thread] = None
         self._audio_queue: Optional[queue.Queue] = None

@@ -34,12 +34,12 @@ from config_manager import ConfigManager
 from output_manager import Out, MessageType
 from output_handlers import SubtitleHandler, ConsoleHandler, LogFileHandler, AlertHandler
 from PyQt5.QtCore import qInstallMessageHandler, QtMsgType
+from paths import LOGS_DIR, RECORDS_DIR, ensure_directories, get_initialization_message
 
 # 配置日志（只输出到文件，不输出到控制台）
 import sys
-log_dir = os.path.join(os.path.expanduser("~"), "Documents", "会议翻译日志")
-os.makedirs(log_dir, exist_ok=True)
-log_file = os.path.join(log_dir, f"translator_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log")
+ensure_directories()
+log_file = LOGS_DIR / f"translator_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
 
 logging.basicConfig(
     level=logging.INFO,
@@ -885,10 +885,7 @@ class MeetingTranslatorApp(QWidget):
             # 1. 保存字幕（如果有内容）
             if save_subtitles and self.subtitle_window:
                 try:
-                    save_dir = os.path.join(os.path.expanduser("~"), "Documents", "会议记录")
-                    os.makedirs(save_dir, exist_ok=True)
-
-                    filepath = self.subtitle_window.save_subtitles(save_dir)
+                    filepath = self.subtitle_window.save_subtitles(RECORDS_DIR)
                     if filepath:
                         self.update_status(f"已保存到: {os.path.basename(filepath)}", "ready")
                 except Exception as e:
@@ -1076,6 +1073,12 @@ def main():
     import warnings
     warnings.filterwarnings("ignore", message=".*coroutine.*WebSocketCommonProtocol.close_connection.*")
     warnings.filterwarnings("ignore", message=".*Task was destroyed but it is pending.*")
+
+    # 显示初始化信息（目录迁移等）
+    init_message = get_initialization_message()
+    if init_message:
+        print(init_message)
+        print()  # 空行分隔
 
     try:
         app = QApplication(sys.argv)

@@ -6,6 +6,9 @@ import json
 import os
 import logging
 from typing import Optional, Dict, Any
+from pathlib import Path
+
+from paths import CONFIG_DIR, ensure_directories
 
 logger = logging.getLogger(__name__)
 
@@ -21,11 +24,11 @@ class ConfigManager:
             config_file: 配置文件路径，默认为用户文档目录
         """
         if config_file is None:
-            config_dir = os.path.join(os.path.expanduser("~"), "Documents", "会议翻译配置")
-            os.makedirs(config_dir, exist_ok=True)
-            config_file = os.path.join(config_dir, "config.json")
+            # 确保目录存在
+            ensure_directories()
+            config_file = CONFIG_DIR / "config.json"
 
-        self.config_file = config_file
+        self.config_file = Path(config_file)
         self.config: Dict[str, Any] = self._load_config()
 
     def _load_config(self) -> Dict[str, Any]:

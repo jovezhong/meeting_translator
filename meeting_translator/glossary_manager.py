@@ -7,6 +7,9 @@ import json
 import os
 import re
 from typing import Dict, List, Tuple
+from pathlib import Path
+
+from paths import CONFIG_DIR, ensure_directories
 
 
 class GlossaryManager:
@@ -18,11 +21,11 @@ class GlossaryManager:
             glossary_file: 术语表文件路径（JSON格式）
         """
         if glossary_file is None:
-            config_dir = os.path.join(os.path.expanduser("~"), "Documents", "会议翻译配置")
-            os.makedirs(config_dir, exist_ok=True)
-            glossary_file = os.path.join(config_dir, "glossary.json")
+            # 确保目录存在
+            ensure_directories()
+            glossary_file = CONFIG_DIR / "glossary.json"
 
-        self.glossary_file = glossary_file
+        self.glossary_file = Path(glossary_file)
         self.glossary: Dict[str, str] = self._load_glossary()
 
         # 编译替换模式（提高效率）

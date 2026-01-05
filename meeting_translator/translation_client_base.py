@@ -17,6 +17,12 @@ class TranslationProvider(Enum):
     DOUBAO = "doubao"
 
 
+class TranslationMode(Enum):
+    """Translation mode types"""
+    S2S = "speech_to_speech"  # Speech-to-Speech: 语音输入 → 翻译 → 语音输出
+    S2T = "speech_to_text"    # Speech-to-Text: 语音输入 → 翻译 → 文本输出
+
+
 class BaseTranslationClient(ABC):
     """
     Abstract base class for translation clients
@@ -150,3 +156,48 @@ class BaseTranslationClient(ABC):
         Default implementation does nothing.
         """
         pass
+
+    def stop_audio_player(self):
+        """
+        Stop audio playback thread (if applicable)
+
+        Optional method for providers that need to manage audio playback.
+        Default implementation does nothing.
+        """
+        pass
+
+    def supports_voice_testing(self) -> bool:
+        """
+        检查是否支持音色试听功能
+
+        Returns:
+            bool: True 如果支持试听功能
+        """
+        return False  # 默认不支持
+
+    async def test_voice_async(self, text: str = "Hello, this is a test."):
+        """
+        试听音色（异步）
+
+        生成一段测试音频并播放，让用户测试当前选择的音色效果。
+
+        Args:
+            text: 要朗读的测试文本
+
+        Raises:
+            NotImplementedError: 如果 provider 不支持试听功能
+        """
+        raise NotImplementedError(f"{self.__class__.__name__} 不支持音色试听功能")
+
+    def get_translation_mode(self) -> TranslationMode:
+        """
+        获取当前 client 的翻译模式
+
+        Returns:
+            TranslationMode: S2S 或 S2T
+        """
+        # 根据 audio_enabled 判断模式
+        if hasattr(self, 'audio_enabled') and self.audio_enabled:
+            return TranslationMode.S2S
+        else:
+            return TranslationMode.S2T

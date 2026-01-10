@@ -114,9 +114,14 @@ class SubtitleWindow(QWidget):
             return
 
         if is_final:
-            # 最终文本：添加到历史记录
+            # 最终文本：添加到历史记录（双语格式）
             timestamp = datetime.now().strftime("%H:%M:%S")
-            formatted_text = f"[{timestamp}] {target_text}"
+            if source_text:
+                # 有源文本时显示双语: [时间] 英文 → 中文
+                formatted_text = f"[{timestamp}] {source_text}\n　　　　→ {target_text}"
+            else:
+                # 没有源文本时只显示翻译
+                formatted_text = f"[{timestamp}] {target_text}"
             self.subtitle_history.append(formatted_text)
 
             # 清空当前增量文本
@@ -126,7 +131,7 @@ class SubtitleWindow(QWidget):
             # 重新渲染所有内容
             self._render_subtitles()
 
-            # Out.debug(f"字幕已添加: {target_text}")
+            Out.debug(f"字幕已添加: {source_text} → {target_text}")
         else:
             # 增量文本：临时显示在最后一行
             self.current_partial_text = target_text

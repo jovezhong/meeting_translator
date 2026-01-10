@@ -116,7 +116,7 @@ class TranslationClientFactory:
                 target_language=target_language,
                 whisper_model=os.getenv("WHISPER_MODEL", "whisper-1"),
                 translation_model=os.getenv("TRANSLATION_MODEL", "gpt-4o-mini"),
-                buffer_seconds=float(os.getenv("WHISPER_BUFFER_SECONDS", "5.0")),
+                buffer_seconds=float(os.getenv("WHISPER_BUFFER_SECONDS", "8.0")),
                 audio_enabled=False,  # Text-only output
                 audio_queue=audio_queue,
                 glossary=glossary,

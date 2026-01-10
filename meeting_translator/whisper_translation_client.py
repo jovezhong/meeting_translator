@@ -78,7 +78,7 @@ class WhisperTranslationClient(BaseTranslationClient):
         target_language: str = "zh",
         whisper_model: str = "whisper-1",
         translation_model: str = "gpt-4o-mini",
-        buffer_seconds: float = 5.0,
+        buffer_seconds: float = 8.0,
         audio_enabled: bool = False,  # Text-only output for this client
         **kwargs
     ):
@@ -91,7 +91,7 @@ class WhisperTranslationClient(BaseTranslationClient):
             target_language: Target language code (default: zh)
             whisper_model: Whisper model to use (default: whisper-1)
             translation_model: GPT model for translation (default: gpt-4o-mini)
-            buffer_seconds: Seconds of audio to buffer before ASR (default: 5.0)
+            buffer_seconds: Seconds of audio to buffer before ASR (default: 8.0)
             audio_enabled: Whether to output audio (not supported yet)
         """
         super().__init__(
@@ -126,6 +126,10 @@ class WhisperTranslationClient(BaseTranslationClient):
         # Callbacks
         self._on_transcription = None  # Called with English ASR result
         self._on_translation = None    # Called with Chinese translation
+
+        # Context tracking for better translation continuity
+        self._previous_transcription = ""  # Previous English text for context
+        self._previous_translation = ""    # Previous translated text
 
         # Language names for prompts
         self.lang_names = {
@@ -222,7 +226,9 @@ class WhisperTranslationClient(BaseTranslationClient):
                 # Check if we have enough audio
                 buffer_duration = self._get_buffer_duration()
 
-                if buffer_duration >= self.buffer_seconds:
+                # Process if buffer reached target duration AND minimum duration (1s)
+                # This prevents processing silence or very short audio artifacts
+                if buffer_duration >= self.buffer_seconds and buffer_duration > 1.0:
                     self._process_buffer()
 
                 # Small sleep to prevent busy loop
@@ -258,14 +264,20 @@ class WhisperTranslationClient(BaseTranslationClient):
             english_text = self._transcribe_audio(audio_data)
 
             if english_text and english_text.strip():
+                # Filter out very short transcriptions (likely artifacts or filler words)
+                word_count = len(english_text.strip().split())
+                if word_count < 3:
+                    Out.debug(f"Skipping short phrase ({word_count} words): {english_text}")
+                    return
+
                 Out.status(f"[ASR] {english_text}")
 
                 # Notify transcription callback
                 if self._on_transcription:
                     self._on_transcription(english_text)
 
-                # Stage 2: Translate to target language
-                chinese_text = self._translate_text(english_text)
+                # Stage 2: Translate to target language (with previous context)
+                chinese_text = self._translate_text(english_text, self._previous_transcription)
 
                 if chinese_text and chinese_text.strip():
                     Out.status(f"[翻译] {chinese_text}")
@@ -273,6 +285,10 @@ class WhisperTranslationClient(BaseTranslationClient):
                     # Notify translation callback
                     if self._on_translation:
                         self._on_translation(english_text, chinese_text)
+
+                    # Update context for next translation
+                    self._previous_transcription = english_text
+                    self._previous_translation = chinese_text
 
         except Exception as e:
             Out.error(f"Processing failed: {e}")
@@ -321,12 +337,13 @@ class WhisperTranslationClient(BaseTranslationClient):
             Out.error(f"Whisper transcription failed: {e}")
             return ""
 
-    def _translate_text(self, text: str) -> str:
+    def _translate_text(self, text: str, previous_context: str = "") -> str:
         """
         Translate text using GPT API
 
         Args:
             text: Source language text
+            previous_context: Previous transcription for context continuity
 
         Returns:
             Translated text in target language
@@ -335,18 +352,30 @@ class WhisperTranslationClient(BaseTranslationClient):
             source_lang = self.lang_names.get(self.source_language, self.source_language)
             target_lang = self.lang_names.get(self.target_language, self.target_language)
 
-            response = self.client.chat.completions.create(
-                model=self.translation_model,
-                messages=[
-                    {
-                        "role": "system",
-                        "content": f"""You are a professional translator. Translate the following {source_lang} text to {target_lang}.
+            # Build context-aware system prompt
+            system_content = f"""You are a professional translator. Translate the following {source_lang} text to {target_lang}.
 
 Rules:
 - Output ONLY the translation, nothing else
 - Preserve technical terms and proper nouns
 - Maintain natural, fluent {target_lang}
 - Do not add explanations or notes"""
+
+            # Add previous context if available
+            if previous_context:
+                system_content += f"""
+
+Previous context for continuity:
+"{previous_context}"
+
+Use this context to improve translation accuracy and handle sentence fragments."""
+
+            response = self.client.chat.completions.create(
+                model=self.translation_model,
+                messages=[
+                    {
+                        "role": "system",
+                        "content": system_content
                     },
                     {
                         "role": "user",
@@ -357,7 +386,7 @@ Rules:
                 max_tokens=1000
             )
 
-            return response.choices[0].message.content.strip()
+            return response.choices[0].message.content.strip() if response.choices[0].message.content else ""
 
         except Exception as e:
             Out.error(f"Translation failed: {e}")
@@ -423,6 +452,6 @@ def create_whisper_client(
         target_language=target_language,
         whisper_model=os.getenv("WHISPER_MODEL", "whisper-1"),
         translation_model=os.getenv("TRANSLATION_MODEL", "gpt-4o-mini"),
-        buffer_seconds=float(os.getenv("WHISPER_BUFFER_SECONDS", "5.0")),
+        buffer_seconds=float(os.getenv("WHISPER_BUFFER_SECONDS", "8.0")),
         **kwargs
     )

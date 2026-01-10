@@ -231,7 +231,7 @@ class SubtitleWindow(QWidget):
             html_parts.append(f'''
                 <div style="margin-bottom: 12px;">
                     <span>{header_line}</span><span>{target_html}</span>
-                    
+
                 </div>
             ''')
 

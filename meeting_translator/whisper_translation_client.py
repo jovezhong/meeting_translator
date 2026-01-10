@@ -66,7 +66,7 @@ class WhisperTranslationClient(BaseTranslationClient):
         - WHISPER_BUFFER_SECONDS: Audio buffer duration (default: 5.0)
     """
 
-    provider = TranslationProvider.OPENAI
+    provider = TranslationProvider.WHISPER
 
     # Whisper API expects 16kHz audio
     AUDIO_RATE = 16000
@@ -271,6 +271,13 @@ class WhisperTranslationClient(BaseTranslationClient):
                     return
 
                 Out.status(f"[ASR] {english_text}")
+                # 将英文识别结果也作为源文本输出到字幕（增量展示体验）
+                self.output_subtitle(
+                    target_text=english_text,
+                    source_text="",
+                    is_final=False,
+                    extra_metadata={"provider": "whisper", "mode": "S2T"}
+                )
 
                 # Notify transcription callback
                 if self._on_transcription:
@@ -281,6 +288,14 @@ class WhisperTranslationClient(BaseTranslationClient):
 
                 if chinese_text and chinese_text.strip():
                     Out.status(f"[翻译] {chinese_text}")
+
+                    # 输出最终字幕，带上源文本，供字幕窗口和控制台使用
+                    self.output_subtitle(
+                        target_text=chinese_text,
+                        source_text=english_text,
+                        is_final=True,
+                        extra_metadata={"provider": "whisper", "mode": "S2T"}
+                    )
 
                     # Notify translation callback
                     if self._on_translation:

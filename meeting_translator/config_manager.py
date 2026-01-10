@@ -98,7 +98,7 @@ class ConfigManager:
 
             # 检查 s2t.provider
             if "provider" in s2t:
-                valid_providers = ["aliyun", "doubao", "openai"]
+                valid_providers = ["aliyun", "doubao", "openai", "whisper"]
                 if s2t["provider"] not in valid_providers:
                     Out.warning(f"配置中 s2t.provider 值无效: {s2t['provider']}")
                     return False
@@ -222,7 +222,7 @@ class ConfigManager:
         设置 S2T Provider
 
         Args:
-            provider: API 提供商 (aliyun/doubao/openai)
+            provider: API 提供商 (aliyun/doubao/openai/whisper)
         """
         if "s2t" not in self.config:
             self.config["s2t"] = {}

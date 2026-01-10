@@ -161,7 +161,10 @@ class AudioDeviceManager:
                         '主声音捕获' in device_name,             # 中文：主声音捕获驱动程序
                         'Wave Out Mix' in device_name,         # 某些声卡的混音设备
                         'What U Hear' in device_name,          # Creative 声卡
-                        'Loopback' in device_name.lower()      # 通用 loopback 关键词
+                        'Loopback' in device_name.lower(),     # 通用 loopback 关键词
+                        'BlackHole' in device_name,            # macOS: BlackHole 虚拟音频设备
+                        'Soundflower' in device_name,          # macOS: Soundflower 虚拟音频设备
+                        'Ground Control' in device_name        # macOS: 另一个虚拟音频工具
                     ])
 
                     # 合并判断

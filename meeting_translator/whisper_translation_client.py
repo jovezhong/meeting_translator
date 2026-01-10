@@ -42,7 +42,7 @@ try:
     OPENAI_AVAILABLE = True
 except ImportError:
     OPENAI_AVAILABLE = False
-    Out.warning("OpenAI package not installed. Install with: pip install openai")
+    # Warning will be shown when client is instantiated, not at import time
 
 
 class WhisperTranslationClient(BaseTranslationClient):
@@ -159,6 +159,21 @@ class WhisperTranslationClient(BaseTranslationClient):
     def get_supported_voices(cls) -> dict:
         """Return supported voices - not applicable for text-only client"""
         return {}  # No TTS voices for this client
+
+    @staticmethod
+    def check_dependencies() -> tuple:
+        """
+        检查 Whisper 依赖是否已安装
+
+        Returns:
+            (is_available, error_message)
+            - is_available: True 如果所有依赖都满足
+            - error_message: 依赖缺失时的错误消息
+        """
+        if not OPENAI_AVAILABLE:
+            return False, "Whisper 客户端需要 OpenAI 依赖包。请运行: pip install openai"
+
+        return True, ""
 
     async def connect(self):
         """Start the processing pipeline"""

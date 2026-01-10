@@ -237,6 +237,7 @@ class MeetingTranslatorApp(QWidget):
         self.provider_combo.addItem("阿里云 Qwen (Alibaba Cloud)", "aliyun")
         self.provider_combo.addItem("豆包 Doubao (ByteDance)", "doubao")
         self.provider_combo.addItem("OpenAI Realtime", "openai")
+        self.provider_combo.addItem("Whisper ASR + GPT Translation (纯文本)", "whisper")
         self.provider_combo.currentIndexChanged.connect(self.on_provider_changed)
 
         provider_label = QLabel("选择提供商:")
@@ -518,6 +519,23 @@ class MeetingTranslatorApp(QWidget):
 
                     # 回滚到原来的提供商
                     # 找到原来提供商的索引
+                    for i in range(self.provider_combo.count()):
+                        if self.provider_combo.itemData(i) == old_provider:
+                            self.provider_combo.setCurrentIndex(i)
+                            Out.warning(f"依赖缺失，已回滚到原提供商: {old_provider}")
+                            return
+
+            elif new_provider == "whisper":
+                from whisper_translation_client import WhisperTranslationClient
+                is_available, error_msg = WhisperTranslationClient.check_dependencies()
+                if not is_available:
+                    # 使用 OutputManager 显示错误提示
+                    Out.user_alert(
+                        message=error_msg,
+                        title="依赖缺失"
+                    )
+
+                    # 回滚到原来的提供商
                     for i in range(self.provider_combo.count()):
                         if self.provider_combo.itemData(i) == old_provider:
                             self.provider_combo.setCurrentIndex(i)

@@ -187,33 +187,23 @@ class BaseTranslationClient(OutputMixin, ABC):
         """
         return {}
 
-    def supports_voice_testing(self) -> bool:
+    def generate_voice_sample_file(self, voice: str, text: str = "This is a common phrase used in business meetings."):
         """
-        检查是否支持音色试听功能
-
-        默认实现返回 True（子类可以覆盖以添加额外条件检查）
-
-        Returns:
-            bool: True 如果支持试听功能
-        """
-        return True
-
-    async def test_voice_async(self, text: str = "Hello, this is a test."):
-        """
-        试听音色（异步）
-
-        生成一段测试音频并播放，让用户测试当前选择的音色效果。
-        此方法会临时创建 PyAudio 播放器，不需要外部队列。
+        生成音色样本文件（预录制，用于试听）
 
         Args:
-            text: 要朗读的测试文本
+            voice: 音色ID（如 "cherry", "marin"）
+            text: 测试文本（默认为商务会议常用短语）
 
-        Raises:
-            NotImplementedError: 如果子类未实现试听功能
+        Returns:
+            str: 生成的音频文件路径，如果失败则返回空字符串
+
+        Note:
+            子类应该覆盖此方法以实现具体的音频生成逻辑。
+            默认实现抛出 NotImplementedError。
         """
-        # 默认实现：暂不支持试听
         raise NotImplementedError(
-            f"{self.__class__.__name__} 暂不支持音色试听功能"
+            f"{self.__class__.__name__} 必须实现 generate_voice_sample_file() 方法"
         )
 
     def get_translation_mode(self) -> TranslationMode:

@@ -168,15 +168,6 @@ class DoubaoClient(BaseTranslationClient):
         """
         return {}
 
-    def supports_voice_testing(self) -> bool:
-        """
-        检查是否支持音色试听功能
-
-        Returns:
-            False（豆包不支持音色试听）
-        """
-        return False
-
     @staticmethod
     def check_dependencies() -> tuple[bool, str]:
         """

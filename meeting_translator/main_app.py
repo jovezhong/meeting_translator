@@ -20,8 +20,14 @@ from PyQt5.QtWidgets import (
     QApplication, QWidget, QVBoxLayout, QHBoxLayout,
     QPushButton, QComboBox, QLabel, QGroupBox
 )
-from PyQt5.QtCore import Qt
+from PyQt5.QtCore import Qt, pyqtSignal, QObject
 from dotenv import load_dotenv
+
+
+class VoicePreviewSignals(QObject):
+    """音色试听信号"""
+    finished = pyqtSignal()
+
 
 from audio_device_manager import AudioDeviceManager
 from audio_capture_thread import AudioCaptureThread
@@ -110,6 +116,9 @@ class MeetingTranslatorApp(QWidget):
         # 配置加载完成，允许自动保存
         self.is_loading_config = False
 
+        # 检查并生成缺失的音色样本文件
+        self._check_and_generate_voice_samples()
+
         # 检查并提示迁移旧文件（如果有）
         init_message = get_initialization_message()
         if init_message:
@@ -154,7 +163,6 @@ class MeetingTranslatorApp(QWidget):
             logger_name="meeting_translator",
             enabled_types=[
                 MessageType.TRANSLATION,      # ✅ 翻译结果（完整记录）
-                # ❌ 不包含 PARTIAL_REPLACE/PARTIAL_APPEND - 增量翻译不记录
                 MessageType.SUBTITLE,          # ✅ 字幕翻译（完整记录）    
                 MessageType.STATUS,           # ✅ 状态信息
                 MessageType.ERROR,            # ✅ 错误
@@ -297,10 +305,33 @@ class MeetingTranslatorApp(QWidget):
         voice_label = QLabel("🎭 英文语音音色:")
         voice_label.setObjectName("subtitleLabel")
         speak_layout.addWidget(voice_label)
+
+        # 音色选择和试听按钮的布局
+        voice_control_layout = QHBoxLayout()
+        voice_control_layout.setSpacing(8)
+        voice_control_layout.setAlignment(Qt.AlignTop)  # 顶部对齐
+
         self.voice_combo = QComboBox()
         # 注意：音色选项会在 _load_provider_voices() 中动态加载
         self.voice_combo.currentIndexChanged.connect(self.on_voice_changed)
-        speak_layout.addWidget(self.voice_combo)
+        voice_control_layout.addWidget(self.voice_combo)
+
+        # 音色试听按钮（与dropdown等高等大）
+        self.voice_preview_btn = QPushButton("▶ 试听")
+        self.voice_preview_btn.setMinimumHeight(32)  # 与ComboBox默认高度一致
+        self.voice_preview_btn.setMinimumWidth(80)   # 增加宽度
+        self.voice_preview_btn.setToolTip("试听当前音色")
+        self.voice_preview_btn.setObjectName("iconButton")
+        self.voice_preview_btn.clicked.connect(self.on_voice_preview_clicked)
+        voice_control_layout.addWidget(self.voice_preview_btn)
+
+        speak_layout.addLayout(voice_control_layout)
+
+        # 音色播放器（用于停止播放）
+        self.voice_player = None
+        self._voice_preview_stop_flag = False
+        self._voice_preview_signals = VoicePreviewSignals()
+        self._voice_preview_signals.finished.connect(self._on_voice_preview_finished)
 
         self.speak_device_info = QLabel("请选择设备")
         self.speak_device_info.setObjectName("deviceInfoLabel")
@@ -444,12 +475,128 @@ class MeetingTranslatorApp(QWidget):
 
     def on_voice_changed(self, index):
         """语音音色选择事件"""
+        # 停止正在播放的音色样本
+        self._stop_voice_preview()
+
         voice = self.voice_combo.itemData(index)
         if voice is not None:  # 允许空字符串（豆包不支持音色）
             # 保存语音配置（仅在非加载期间），传递当前 provider
             if not self.is_loading_config:
                 self.config_manager.set_voice(voice, provider=self.provider)
                 Out.status(f"已保存音色设置: {self.provider} -> {voice or '(默认)'}")
+
+    def _stop_voice_preview(self):
+        """停止音色样本播放"""
+        if self.voice_player and self.voice_player.is_alive():
+            # 设置停止标志
+            self._voice_preview_stop_flag = True
+            # 等待线程结束（最多1秒）
+            self.voice_player.join(timeout=1.0)
+            self.voice_player = None
+
+        # 恢复按钮状态
+        self.voice_preview_btn.setText("▶ 试听")
+        self._voice_preview_stop_flag = False
+
+    def on_voice_preview_clicked(self):
+        """音色试听按钮点击事件"""
+        # 如果正在播放，停止播放
+        if self.voice_player and self.voice_player.is_alive():
+            self._stop_voice_preview()
+            return
+
+        # 获取当前选中的音色
+        voice = self.voice_combo.currentData()
+        if not voice:
+            Out.warning("当前提供商不支持音色选择")
+            return
+
+        # 构建音色样本文件路径
+        from pathlib import Path
+        from paths import VOICE_SAMPLES_DIR
+
+        provider_prefix = {
+            "aliyun": "qwen",
+            "openai": "openai",
+            "doubao": "doubao"
+        }.get(self.provider)
+
+        if not provider_prefix:
+            Out.warning(f"提供商 {self.provider} 不支持音色试听")
+            return
+
+        filename = f"{provider_prefix}_{voice}.wav"
+        filepath = VOICE_SAMPLES_DIR / filename
+
+        if not filepath.exists():
+            Out.warning(f"音色样本文件不存在: {filename}")
+            return
+
+        # 更新按钮状态（保持可点击）
+        self.voice_preview_btn.setText("⏸ 停止")
+
+        # 在后台线程播放音频
+        self._voice_preview_stop_flag = False
+        import threading
+        self.voice_player = threading.Thread(
+            target=self._play_voice_sample_thread,
+            args=(str(filepath),),
+            daemon=True
+        )
+        self.voice_player.start()
+
+    def _play_voice_sample_thread(self, filepath: str):
+        """
+        在后台线程播放音色样本（支持停止）
+
+        Args:
+            filepath: 音色样本文件路径
+        """
+        try:
+            import wave
+            import pyaudio
+
+            # 打开 WAV 文件
+            wf = wave.open(filepath, 'rb')
+
+            # 创建 PyAudio 实例
+            p = pyaudio.PyAudio()
+
+            # 打开音频流
+            stream = p.open(
+                format=p.get_format_from_width(wf.getsampwidth()),
+                channels=wf.getnchannels(),
+                rate=wf.getframerate(),
+                output=True
+            )
+
+            # 读取并播放音频数据
+            chunk_size = 1024
+            data = wf.readframes(chunk_size)
+
+            while len(data) > 0 and not self._voice_preview_stop_flag:
+                stream.write(data)
+                data = wf.readframes(chunk_size)
+
+            # 清理资源
+            stream.stop_stream()
+            stream.close()
+            p.terminate()
+            wf.close()
+
+            if self._voice_preview_stop_flag:
+                Out.status("音色试听已停止")
+
+        except Exception as e:
+            Out.error(f"播放音色样本时出错: {e}")
+        finally:
+            # 发送完成信号（在主线程中恢复按钮状态）
+            self._voice_preview_signals.finished.emit()
+            self.voice_player = None
+
+    def _on_voice_preview_finished(self):
+        """音色试听完成槽函数（在主线程中执行）"""
+        self.voice_preview_btn.setText("▶ 试听")
 
     def _load_provider_voices(self):
         """
@@ -504,6 +651,9 @@ class MeetingTranslatorApp(QWidget):
         new_provider = self.provider_combo.itemData(index)
         if new_provider and new_provider != self.provider:
             old_provider = self.provider
+
+            # 停止正在播放的音色样本
+            self._stop_voice_preview()
 
             # 检查依赖（针对需要特定依赖的提供商）
             if new_provider == "doubao":
@@ -754,7 +904,35 @@ class MeetingTranslatorApp(QWidget):
         # 注意：语音音色已在 _load_provider_voices() 中恢复
 
         Out.status("配置加载完成")
-        Out.status("=" * 60)
+
+    def _check_and_generate_voice_samples(self):
+        """
+        检查并生成缺失的音色样本文件（阻塞式）
+
+        在程序启动前同步生成所有缺失的音色样本，确保进入程序时样本齐全。
+        """
+        from translation_client_factory import TranslationClientFactory
+        from voice_sample_generator import generate_provider_samples
+
+        try:
+            # 获取当前配置的 provider
+            provider = self.config_manager.get_provider()
+
+            # 豆包不支持音色选择，跳过
+            if provider == "doubao":
+                return
+
+            # 获取该 provider 支持的音色列表
+            supported_voices = TranslationClientFactory.get_supported_voices(provider)
+
+            if not supported_voices:
+                return
+
+            # 生成缺失的音色样本
+            generate_provider_samples(provider, TranslationClientFactory, supported_voices)
+
+        except Exception as e:
+            print(f"检查音色样本时出错: {e}\n")
 
     def _select_device_by_display(self, combo: QComboBox, device_display: str, device_type: str):
         """通过设备显示名称（包含 host api）选择设备"""
@@ -1079,6 +1257,9 @@ class MeetingTranslatorApp(QWidget):
 
         # 停止翻译
         self.stop_translation()
+
+        # 停止音色样本播放
+        self._stop_voice_preview()
 
         # 关闭字幕窗口
         if self.subtitle_window:

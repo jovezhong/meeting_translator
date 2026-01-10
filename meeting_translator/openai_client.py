@@ -141,8 +141,10 @@ class OpenAIClient(BaseTranslationClient):
         }
 
         try:
-            # 检查代理配置
-            proxy_url = os.getenv("HTTP_PROXY") or os.getenv("http_proxy")
+            # 检查代理配置（支持多种环境变量格式）
+            proxy_url = (os.getenv("HTTP_PROXY") or
+                        os.getenv("http_proxy") or
+                        os.getenv("GLOBAL_AGENT_HTTP_PROXY"))
 
             if PROXY_AVAILABLE and proxy_url:
                 self.output_debug(f"使用代理: {proxy_url}")
@@ -358,3 +360,192 @@ class OpenAIClient(BaseTranslationClient):
                 self.output_warning("WebSocket 关闭超时")
             except Exception as e:
                 self.output_warning(f"关闭 WebSocket 时出错: {e}")
+
+    def generate_voice_sample_file(self, voice: str, text: str = "This is a common phrase used in business meetings."):
+        """
+        生成音色样本文件（OpenAI 实现）
+
+        使用标准音频输入文件通过 S2S 模式生成音色样本。
+
+        Args:
+            voice: 音色ID（如 "marin", "cedar", "alloy"）
+            text: 测试文本（未使用，使用预录制的音频文件）
+
+        Returns:
+            str: 生成的音频文件路径，如果失败则返回空字符串
+        """
+        from pathlib import Path
+        from paths import VOICE_SAMPLES_DIR, ASSETS_DIR
+        import asyncio
+
+        # 生成文件名：openai_{voice}.wav
+        filename = f"openai_{voice}.wav"
+        filepath = VOICE_SAMPLES_DIR / filename
+
+        # 如果文件已存在，直接返回
+        if filepath.exists():
+            return str(filepath)
+
+        # 检查标准音频文件是否存在
+        standard_audio = ASSETS_DIR / "voice_sample_input_24k.wav"
+        if not standard_audio.exists():
+            return ""
+
+        # 异步生成音频
+        async def _generate():
+            try:
+                # 保存当前设置
+                original_voice = self.voice
+                original_audio_enabled = self.audio_enabled
+                self.voice = voice
+                self.audio_enabled = True  # 强制使用 S2S 模式
+
+                # 连接（connect() 内部会调用 configure_session()）
+                await self.connect()
+
+                # 重新配置session，增加silence_duration_ms以避免过早取消响应
+                # 音色样本生成需要发送完整的预录音频，所以需要更长的静音检测时间
+                instructions = self._build_translation_instructions()
+                sample_config = {
+                    "type": "session.update",
+                    "session": {
+                        "modalities": ["text", "audio"],
+                        "instructions": instructions,
+                        "voice": self.voice,
+                        "input_audio_format": "pcm16",
+                        "output_audio_format": "pcm16",
+                        "turn_detection": {
+                            "type": "server_vad",
+                            "threshold": 0.5,
+                            "prefix_padding_ms": 300,
+                            "silence_duration_ms": 2000  # 增加到2秒，避免过早取消
+                        },
+                        "temperature": 0.8,
+                        "max_response_output_tokens": 4096
+                    }
+                }
+                await self.ws.send(json.dumps(sample_config))
+
+                # 读取标准音频文件（跳过 WAV header）
+                with open(standard_audio, 'rb') as f:
+                    # 跳过 WAV header (44 bytes)
+                    f.seek(44)
+                    audio_data = f.read()
+
+                # 收集音频数据
+                audio_chunks = []
+                response_complete = False
+
+                # 先启动消息监听任务（在后台运行）
+                async def collect_messages():
+                    nonlocal audio_chunks, response_complete
+                    try:
+                        async for message in self.ws:
+                            try:
+                                event = json.loads(message)
+                                event_type = event.get("type", "")
+
+                                # 收集音频输出
+                                if event_type == "response.audio.delta" and self.audio_enabled:
+                                    audio_b64 = event.get("delta", "")
+                                    if audio_b64:
+                                        audio_data = base64.b64decode(audio_b64)
+                                        audio_chunks.append(audio_data)
+
+                                elif event_type == "response.done":
+                                    # 响应完成
+                                    response_complete = True
+                                    break
+
+                                elif event_type == "error":
+                                    # 错误，退出
+                                    break
+
+                            except json.JSONDecodeError:
+                                continue
+                            except Exception:
+                                continue
+
+                            # 如果已经完成，退出
+                            if response_complete:
+                                break
+
+                    except Exception:
+                        pass
+
+                # 并行运行消息监听和音频发送
+                import asyncio
+                message_task = asyncio.create_task(collect_messages())
+
+                # 短暂等待，确保消息监听已启动
+                await asyncio.sleep(0.5)
+
+                # 分块发送音频（每块 100KB）
+                chunk_size = 100 * 1024  # 100KB
+                total_sent = 0
+                chunk_count = 0
+                for i in range(0, len(audio_data), chunk_size):
+                    chunk = audio_data[i:i + chunk_size]
+                    await self.send_audio_chunk(chunk)
+                    total_sent += len(chunk)
+                    chunk_count += 1
+
+                    # 每3个块后暂停一下
+                    if chunk_count % 3 == 0 and i + chunk_size < len(audio_data):
+                        await asyncio.sleep(0.1)
+
+                # 发送静音，让VAD检测到语音结束
+                import struct
+                silence_duration = 2.0  # 2秒
+                silence_samples = int(self.output_rate * silence_duration)
+                silence_data = struct.pack('<' + 'h' * silence_samples, *[0] * silence_samples)
+
+                # 分块发送静音
+                silence_chunk_size = 100 * 1024  # 100KB
+                for i in range(0, len(silence_data), silence_chunk_size):
+                    chunk = silence_data[i:i + silence_chunk_size]
+                    await self.send_audio_chunk(chunk)
+
+                # 等待消息监听任务完成（最多30秒）
+                try:
+                    await asyncio.wait_for(message_task, timeout=30.0)
+                except asyncio.TimeoutError:
+                    pass
+
+                # 合并音频并保存
+                if audio_chunks:
+                    full_audio = b''.join(audio_chunks)
+
+                    # 保存为 WAV 文件
+                    import wave
+                    filepath.parent.mkdir(parents=True, exist_ok=True)
+                    with wave.open(str(filepath), 'wb') as wf:
+                        wf.setnchannels(1)  # 单声道
+                        wf.setsampwidth(2)  # 16-bit = 2 bytes
+                        wf.setframerate(self.output_rate)
+                        wf.writeframes(full_audio)
+
+                    return str(filepath)
+                else:
+                    return ""
+
+            except Exception:
+                return ""
+            finally:
+                # 恢复原始设置
+                self.voice = original_voice
+                self.audio_enabled = original_audio_enabled
+                try:
+                    await self.close()
+                except:
+                    pass
+
+        # 运行异步任务
+        try:
+            # 每次都创建新的事件循环，避免使用已关闭的循环
+            import concurrent.futures
+            with concurrent.futures.ThreadPoolExecutor() as executor:
+                future = executor.submit(asyncio.run, _generate())
+                return future.result(timeout=40)  # 40秒超时
+        except Exception:
+            return ""

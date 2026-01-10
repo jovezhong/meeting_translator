@@ -8,11 +8,19 @@ from pathlib import Path
 
 
 # ========== 根目录 ==========
-# 所有应用数据统一放在 meeting_translator 目录下
+# 使用项目根目录（不是用户目录）
+PROJECT_ROOT = Path(__file__).parent.parent.resolve()
+
+# ========== 数据目录 ==========
+# 应用数据放在用户目录下
 MEETING_TRANSLATOR_ROOT = Path.home() / "Documents" / "meeting_translator"
 
 
-# ========== 子目录 ==========
+# ========== 子目录（项目内）==========
+ASSETS_DIR = PROJECT_ROOT / "assets"             # 资源文件（标准音频输入）
+VOICE_SAMPLES_DIR = PROJECT_ROOT / "voice_samples"  # 音色样本文件（生成）
+
+# ========== 用户数据子目录 ==========
 LOGS_DIR = MEETING_TRANSLATOR_ROOT / "logs"           # 日志文件
 CONFIG_DIR = MEETING_TRANSLATOR_ROOT / "config"       # 配置文件
 RECORDS_DIR = MEETING_TRANSLATOR_ROOT / "records"     # 会议记录（字幕）
@@ -39,6 +47,8 @@ def ensure_directories():
     LOGS_DIR.mkdir(exist_ok=True)
     CONFIG_DIR.mkdir(exist_ok=True)
     RECORDS_DIR.mkdir(exist_ok=True)
+    ASSETS_DIR.mkdir(parents=True, exist_ok=True)  # 项目内目录
+    VOICE_SAMPLES_DIR.mkdir(parents=True, exist_ok=True)  # 项目内目录
 
 
 def migrate_legacy_files():

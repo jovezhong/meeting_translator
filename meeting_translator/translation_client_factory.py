@@ -10,6 +10,7 @@ from translation_client_base import BaseTranslationClient, TranslationProvider
 from qwen_client import QwenClient
 from openai_client import OpenAIClient
 from doubao_client import DoubaoClient
+from whisper_translation_client import WhisperTranslationClient
 
 
 class TranslationClientFactory:
@@ -106,10 +107,26 @@ class TranslationClientFactory:
                 access_token=access_token  # doubao_access_token
             )
 
+        elif provider == "whisper":
+            # WhisperTranslationClient: two-stage approach (Whisper ASR + GPT Translation)
+            # Text-only output, no audio synthesis
+            return WhisperTranslationClient(
+                api_key=api_key,
+                source_language=source_language,
+                target_language=target_language,
+                whisper_model=os.getenv("WHISPER_MODEL", "whisper-1"),
+                translation_model=os.getenv("TRANSLATION_MODEL", "gpt-4o-mini"),
+                buffer_seconds=float(os.getenv("WHISPER_BUFFER_SECONDS", "5.0")),
+                audio_enabled=False,  # Text-only output
+                audio_queue=audio_queue,
+                glossary=glossary,
+                **kwargs
+            )
+
         else:
             raise ValueError(
                 f"Unsupported provider: {provider}. "
-                f"Supported providers: aliyun, openai, doubao"
+                f"Supported providers: aliyun, openai, doubao, whisper"
             )
 
     @staticmethod
@@ -119,6 +136,7 @@ class TranslationClientFactory:
             "aliyun": ["DASHSCOPE_API_KEY", "ALIYUN_API_KEY"],
             "alibaba": ["DASHSCOPE_API_KEY", "ALIYUN_API_KEY"],
             "openai": ["OPENAI_API_KEY"],
+            "whisper": ["OPENAI_API_KEY"],  # Whisper uses OpenAI API
             "doubao": ["doubao_app_id", "DOUBAO_APP_ID"],
             "gemini": ["GEMINI_API_KEY", "GOOGLE_API_KEY"],
             "deepgram": ["DEEPGRAM_API_KEY"],
@@ -144,6 +162,7 @@ class TranslationClientFactory:
             "aliyun": "cherry",  # Qwen uses lowercase
             "alibaba": "cherry",
             "openai": "marin",  # OpenAI recommends marin or cedar
+            "whisper": "",  # Whisper is text-only, no TTS
             "doubao": "",  # Doubao doesn't support voice selection (voice cloning)
             "gemini": "en-US-Neural2-F",
             "elevenlabs": "EXAVITQu4vr4xnSDxMaL"  # Sarah
@@ -169,6 +188,8 @@ class TranslationClientFactory:
             return OpenAIClient.get_supported_voices()
         elif provider == "doubao":
             return DoubaoClient.get_supported_voices()
+        elif provider == "whisper":
+            return WhisperTranslationClient.get_supported_voices()
         else:
             return {}
 
@@ -183,5 +204,6 @@ class TranslationClientFactory:
         return {
             "aliyun": "Alibaba Cloud (Aliyun)",
             "openai": "OpenAI Realtime API",
+            "whisper": "Whisper ASR + GPT Translation (Text-only)",
             "doubao": "Doubao (ByteDance)"
         }

@@ -99,7 +99,7 @@ class ConfigManager:
             return False
 
         # 检查 provider 字段值
-        valid_providers = ["aliyun", "doubao", "openai"]
+        valid_providers = ["aliyun", "doubao", "openai", "whisper"]
         if config.get("provider") not in valid_providers:
             Out.warning(f"配置中 provider 字段值无效: {config.get('provider')}")
             return False
@@ -159,11 +159,12 @@ class ConfigManager:
         """获取默认配置"""
         return {
             "mode": "listen",  # listen / speak / both（枚举值）
-            "provider": "aliyun",  # aliyun / doubao / openai
+            "provider": "aliyun",  # aliyun / doubao / openai / whisper
             "voices": {  # 为每个 provider 单独保存音色
                 "aliyun": "cherry",
                 "openai": "marin",
-                "doubao": ""  # 豆包不支持音色选择
+                "doubao": "",  # 豆包不支持音色选择
+                "whisper": ""  # Whisper 纯文本输出，无需音色
             },
             "listen_device_display": None,  # 使用 display_name（包含 host api）
             "speak_input_device_display": None,
@@ -243,7 +244,7 @@ class ConfigManager:
         获取指定提供商的语音音色
 
         Args:
-            provider: API 提供商 (aliyun/openai/doubao)
+            provider: API 提供商 (aliyun/openai/doubao/whisper)
 
         Returns:
             音色 ID，如果未配置则返回默认值
@@ -252,7 +253,8 @@ class ConfigManager:
         default_voices = {
             "aliyun": "cherry",
             "openai": "marin",
-            "doubao": ""
+            "doubao": "",
+            "whisper": ""
         }
         return voices.get(provider, default_voices.get(provider, ""))
 

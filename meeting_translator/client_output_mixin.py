@@ -29,6 +29,8 @@ class OutputMixin:
             return "DOUBAO"
         elif "OpenAI" in class_name:
             return "OPENAI"
+        elif "Whisper" in class_name:
+            return "WHISPER"
         else:
             return "UNKNOWN"
 

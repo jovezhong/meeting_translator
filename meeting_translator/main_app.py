@@ -246,6 +246,7 @@ class MeetingTranslatorApp(QWidget):
         self.s2t_provider_combo.addItem("阿里云 Qwen (Alibaba Cloud)", "aliyun")
         self.s2t_provider_combo.addItem("豆包 Doubao (ByteDance)", "doubao")
         self.s2t_provider_combo.addItem("OpenAI Realtime", "openai")
+        self.s2t_provider_combo.addItem("Whisper ASR + GPT Translation (纯文本)", "whisper")
         self.s2t_provider_combo.currentIndexChanged.connect(self.on_s2t_provider_changed)
         s2t_provider_layout.addWidget(self.s2t_provider_combo, 1)
 
@@ -384,6 +385,17 @@ class MeetingTranslatorApp(QWidget):
             if new_provider == "doubao":
                 from doubao_client import DoubaoClient
                 is_available, error_msg = DoubaoClient.check_dependencies()
+                if not is_available:
+                    Out.user_alert(message=error_msg, title="依赖缺失")
+                    # 回滚到原来的提供商
+                    for i in range(self.s2t_provider_combo.count()):
+                        if self.s2t_provider_combo.itemData(i) == self.s2t_provider:
+                            self.s2t_provider_combo.setCurrentIndex(i)
+                            Out.warning(f"依赖缺失，已回滚到原提供商: {self.s2t_provider}")
+                            return
+            elif new_provider == "whisper":
+                from whisper_translation_client import WhisperTranslationClient
+                is_available, error_msg = WhisperTranslationClient.check_dependencies()
                 if not is_available:
                     Out.user_alert(message=error_msg, title="依赖缺失")
                     # 回滚到原来的提供商

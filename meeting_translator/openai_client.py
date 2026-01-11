@@ -205,8 +205,8 @@ class OpenAIClient(BaseTranslationClient):
                     "prefix_padding_ms": 300,
                     "silence_duration_ms": 300  # 减少到 300ms，更快响应
                 },
-                # 翻译任务不需要“创造性”，低温度可显著减少额外提示语/解释
-                "temperature": 0.2,
+                # Realtime API 要求 session.temperature >= 0.6；用低端值尽量减少寒暄
+                "temperature": 0.6,
                 "max_response_output_tokens": 4096
             }
         }

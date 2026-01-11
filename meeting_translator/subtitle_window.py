@@ -165,16 +165,16 @@ class SubtitleWindow(QWidget):
                 english_part = self._escape_html(parts[0])  # [timestamp] English text
                 chinese_part = self._escape_html(parts[1]) if len(parts) > 1 else ""  # 　　　　→ Chinese
 
-                # Render with proper HTML line breaks and styling
+                # 双语：英文 + 中文，使用 span 控制行内样式
                 html_parts.append(f'''
-                    <div style="margin-bottom: 12px;">
-                        <p style="color: #FFD700; margin: 2px 0; font-size: 14px;">{english_part}</p>
-                        <p style="color: #FFFFFF; margin: 2px 0 2px 20px; font-size: 16px; font-weight: bold;">{chinese_part}</p>
+                    <div style="margin-bottom: 8px;">
+                        <div style="color: #FFD700; font-size: 14px; margin-bottom: 2px;">{english_part}</div>
+                        <div style="color: #FFFFFF; font-size: 16px; font-weight: bold; margin-left: 20px;">{chinese_part}</div>
                     </div>
                 ''')
             else:
-                # Single language format (Chinese only) - 统一使用 div 结构
-                html_parts.append(f'<div style="margin-bottom: 12px;"><p style="color: white; margin: 8px 0; font-size: 16px;">{self._escape_html(line)}</p></div>')
+                # 单语言：只有中文，使用 div 统一结构
+                html_parts.append(f'<div style="color: white; font-size: 16px; margin-bottom: 8px;">{self._escape_html(line)}</div>')
 
         # 如果有增量文本，添加到末尾
         if self.current_partial_text:
@@ -184,10 +184,10 @@ class SubtitleWindow(QWidget):
             source_html = ""
             if self.current_source_text:
                 source_html = f'''
-                    <p style="color: #FFD700; margin: 8px 0 2px 0; font-weight: normal; font-size: 16px;
+                    <div style="color: #FFD700; margin: 8px 0 2px 0; font-weight: normal; font-size: 16px;
                               text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.8);">
                         [{timestamp}] {self._escape_html(self.current_source_text)}
-                    </p>
+                    </div>
                 '''
 
             if self.current_predicted_text:
@@ -195,20 +195,20 @@ class SubtitleWindow(QWidget):
                 arrow_prefix = "　　　　→ " if self.current_source_text else ""
                 html_parts.append(f'''
                     {source_html}
-                    <p style="color: #FFFFFF; margin: 2px 0 8px 0; font-weight: bold;
+                    <div style="color: #FFFFFF; margin: 2px 0 8px 0; font-weight: bold;
                               font-size: 16px; text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.8);">
                         {arrow_prefix}{self._escape_html(self.current_partial_text)}<span style="color: #AAAAAA; font-weight: normal; font-size: 16px;">{self._escape_html(self.current_predicted_text)}</span> <span style="color: #6496FF;">...</span>
-                    </p>
+                    </div>
                 ''')
             else:
                 # 没有预测部分，只有已确定文本
                 arrow_prefix = "　　　　→ " if self.current_source_text else ""
                 html_parts.append(f'''
                     {source_html}
-                    <p style="color: #FFFFFF; margin: 2px 0 8px 0; font-weight: bold;
+                    <div style="color: #FFFFFF; margin: 2px 0 8px 0; font-weight: bold;
                               font-size: 16px; text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.8);">
                         {arrow_prefix}{self._escape_html(self.current_partial_text)} <span style="color: #6496FF;">...</span>
-                    </p>
+                    </div>
                 ''')
 
         html_parts.append('</div>')

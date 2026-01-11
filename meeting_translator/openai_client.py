@@ -144,16 +144,16 @@ class OpenAIClient(BaseTranslationClient):
         # S2T: Delta 增量转录追踪（用于渐进式显示）
         self._current_item_id = None
         self._current_delta_transcript = ""
-        # 英文显示节流（快，每200ms或4个新词）
+        # 英文显示节流（快，每50ms或2个新词）
         self._last_english_time = 0.0
         self._last_english_word_count = 0
-        self._english_throttle_ms = 200
-        self._english_word_delta = 4  # 每4个新词更新一次
-        # 中文翻译节流（慢，每3秒或10个新词）
+        self._english_throttle_ms = 50  # 50ms - 20 updates/sec max
+        self._english_word_delta = 2  # 每2个新词更新一次
+        # 中文翻译节流（慢，每2秒或8个新词）
         self._last_translation_time = 0.0
         self._last_translation_word_count = 0
-        self._translation_throttle_ms = 3000  # 3秒
-        self._translation_word_delta = 10  # 每10个新词翻译一次
+        self._translation_throttle_ms = 2000  # 2秒
+        self._translation_word_delta = 8  # 每8个新词翻译一次
         self._translation_task = None  # 后台翻译任务
 
         # 语言名称映射
@@ -536,8 +536,8 @@ Use this for continuity."""
         """处理 S2T 模式的增量转录（Delta 事件）
 
         分离英文和中文的节流策略：
-        - 英文：快速更新（每200ms或4个新词），提供即时反馈
-        - 中文：慢速翻译（每3秒或10个新词），避免API过载
+        - 英文：快速更新（每50ms或2个新词），提供即时反馈
+        - 中文：慢速翻译（每2秒或8个新词），避免API过载
         """
         if not partial_transcript or not partial_transcript.strip():
             return
@@ -551,7 +551,8 @@ Use this for continuity."""
             words = partial_transcript.split()
 
         word_count = len(words)
-        if word_count < 2:
+        # 降低门槛到1个词就开始显示
+        if word_count < 1:
             return
 
         current_time = time.time() * 1000  # 毫秒

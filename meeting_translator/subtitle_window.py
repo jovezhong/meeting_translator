@@ -173,8 +173,8 @@ class SubtitleWindow(QWidget):
                     </div>
                 ''')
             else:
-                # Single language format (Chinese only)
-                html_parts.append(f'<p style="color: white; margin: 8px 0; font-size: 16px;">{self._escape_html(line)}</p>')
+                # Single language format (Chinese only) - 统一使用 div 结构
+                html_parts.append(f'<div style="margin-bottom: 12px;"><p style="color: white; margin: 8px 0; font-size: 16px;">{self._escape_html(line)}</p></div>')
 
         # 如果有增量文本，添加到末尾
         if self.current_partial_text:
@@ -192,20 +192,22 @@ class SubtitleWindow(QWidget):
 
             if self.current_predicted_text:
                 # 有预测部分：已确定文本（亮白）+ 预测文本（灰色）
+                arrow_prefix = "　　　　→ " if self.current_source_text else ""
                 html_parts.append(f'''
                     {source_html}
                     <p style="color: #FFFFFF; margin: 2px 0 8px 0; font-weight: bold;
                               font-size: 16px; text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.8);">
-                        　　　　→ {self._escape_html(self.current_partial_text)}<span style="color: #AAAAAA; font-weight: normal; font-size: 16px;">{self._escape_html(self.current_predicted_text)}</span> <span style="color: #6496FF;">...</span>
+                        {arrow_prefix}{self._escape_html(self.current_partial_text)}<span style="color: #AAAAAA; font-weight: normal; font-size: 16px;">{self._escape_html(self.current_predicted_text)}</span> <span style="color: #6496FF;">...</span>
                     </p>
                 ''')
             else:
                 # 没有预测部分，只有已确定文本
+                arrow_prefix = "　　　　→ " if self.current_source_text else ""
                 html_parts.append(f'''
                     {source_html}
                     <p style="color: #FFFFFF; margin: 2px 0 8px 0; font-weight: bold;
                               font-size: 16px; text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.8);">
-                        　　　　→ {self._escape_html(self.current_partial_text)} <span style="color: #6496FF;">...</span>
+                        {arrow_prefix}{self._escape_html(self.current_partial_text)} <span style="color: #6496FF;">...</span>
                     </p>
                 ''')
 

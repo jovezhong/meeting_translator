@@ -1,6 +1,6 @@
 """
 配置管理器
-保存和加载用户配置（模式、设备选择等）
+保存和加载用户配置（S2T/S2S 设备、Provider 等）
 支持配置格式验证和自动修复
 """
 import json
@@ -17,12 +17,7 @@ class ConfigManager:
     """配置管理器（支持自动验证和修复）"""
 
     # 配置格式版本（用于验证和迁移）
-    CONFIG_VERSION = "1.0"
-
-    # 当前版本支持的配置字段
-    REQUIRED_FIELDS = ["mode", "provider"]
-    OPTIONAL_FIELDS = ["voices", "listen_device_display", "speak_input_device_display", "speak_output_device_display"]
-    ALL_FIELDS = REQUIRED_FIELDS + OPTIONAL_FIELDS
+    CONFIG_VERSION = "2.0"
 
     def __init__(self, config_file: Optional[str] = None):
         """
@@ -43,7 +38,7 @@ class ConfigManager:
     def _load_and_validate_config(self) -> Dict[str, Any]:
         """
         加载并验证配置文件
-        如果配置格式不正确，备份并创建新配置
+        如果配置版本不匹配或格式不正确，备份并创建新配置
         """
         if not os.path.exists(self.config_file):
             Out.status(f"配置文件不存在: {self.config_file}")
@@ -53,6 +48,14 @@ class ConfigManager:
         try:
             with open(self.config_file, 'r', encoding='utf-8') as f:
                 config = json.load(f)
+
+            # 检查版本
+            if config.get('version') != self.CONFIG_VERSION:
+                Out.warning(f"配置版本不匹配 (当前: {config.get('version')}, 期望: {self.CONFIG_VERSION})")
+                # 备份旧配置
+                self._backup_config()
+                # 返回默认配置
+                return self._get_default_config()
 
             # 验证配置格式
             if not self._validate_config(config):
@@ -86,48 +89,55 @@ class ConfigManager:
             True: 格式正确
             False: 格式不正确
         """
-        # 检查必需字段
-        for field in self.REQUIRED_FIELDS:
-            if field not in config:
-                Out.warning(f"配置缺少必需字段: {field}")
+        # 检查 s2t 部分
+        if "s2t" in config:
+            s2t = config["s2t"]
+            if not isinstance(s2t, dict):
+                Out.warning("配置中 s2t 字段必须是字典")
                 return False
 
-        # 检查 mode 字段值（使用枚举值而不是枚举名）
-        valid_modes = ["listen", "speak", "both"]
-        if config.get("mode") not in valid_modes:
-            Out.warning(f"配置中 mode 字段值无效: {config.get('mode')}")
-            return False
-
-        # 检查 provider 字段值
-        valid_providers = ["aliyun", "doubao", "openai"]
-        if config.get("provider") not in valid_providers:
-            Out.warning(f"配置中 provider 字段值无效: {config.get('provider')}")
-            return False
-
-        # 检查 voices 字段（如果存在）
-        if "voices" in config:
-            if not isinstance(config["voices"], dict):
-                Out.warning("配置中 voices 字段必须是字典")
-                return False
-
-            # 检查每个 provider 的音色是否有效
-            for provider, voice in config["voices"].items():
-                if provider not in valid_providers:
-                    Out.warning(f"配置中包含未知的 provider: {provider}")
+            # 检查 s2t.provider
+            if "provider" in s2t:
+                valid_providers = ["aliyun", "doubao", "openai"]
+                if s2t["provider"] not in valid_providers:
+                    Out.warning(f"配置中 s2t.provider 值无效: {s2t['provider']}")
                     return False
 
-        # 检查设备名称字段（如果存在，必须是字符串或 None）
-        device_fields = [
-            "listen_device_display",
-            "speak_input_device_display",
-            "speak_output_device_display"
-        ]
-        for field in device_fields:
-            if field in config:
-                value = config[field]
+            # 检查 s2t.listen_device_display
+            if "listen_device_display" in s2t:
+                value = s2t["listen_device_display"]
                 if value is not None and not isinstance(value, str):
-                    Out.warning(f"配置中 {field} 字段必须是字符串或 None")
+                    Out.warning("配置中 s2t.listen_device_display 必须是字符串或 None")
                     return False
+
+        # 检查 s2s 部分
+        if "s2s" in config:
+            s2s = config["s2s"]
+            if not isinstance(s2s, dict):
+                Out.warning("配置中 s2s 字段必须是字典")
+                return False
+
+            # 检查 s2s.provider
+            if "provider" in s2s:
+                valid_providers = ["aliyun", "doubao", "openai"]
+                if s2s["provider"] not in valid_providers:
+                    Out.warning(f"配置中 s2s.provider 值无效: {s2s['provider']}")
+                    return False
+
+            # 检查 s2s.voice
+            if "voice" in s2s:
+                if not isinstance(s2s["voice"], str):
+                    Out.warning("配置中 s2s.voice 必须是字符串")
+                    return False
+
+            # 检查 s2s 设备字段
+            device_fields = ["speak_input_device_display", "speak_output_device_display"]
+            for field in device_fields:
+                if field in s2s:
+                    value = s2s[field]
+                    if value is not None and not isinstance(value, str):
+                        Out.warning(f"配置中 s2s.{field} 必须是字符串或 None")
+                        return False
 
         # 验证通过
         return True
@@ -135,18 +145,14 @@ class ConfigManager:
     def _backup_config(self):
         """
         备份当前配置文件
-        将 config.json 重命名为 config_bk_<timestamp>.json
+        将 config.json 重命名为 config.json.bak
         """
         if not os.path.exists(self.config_file):
             return
 
         try:
-            # 生成备份文件名
-            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-            backup_file = os.path.join(
-                os.path.dirname(self.config_file),
-                f"config_bk_{timestamp}.json"
-            )
+            # 生成备份文件名（使用 .bak 后缀）
+            backup_file = f"{self.config_file}.bak"
 
             # 重命名当前配置文件
             shutil.move(self.config_file, backup_file)
@@ -156,18 +162,19 @@ class ConfigManager:
             Out.error(f"备份配置文件失败: {e}")
 
     def _get_default_config(self) -> Dict[str, Any]:
-        """获取默认配置"""
+        """获取默认配置（v2.0 格式）"""
         return {
-            "mode": "listen",  # listen / speak / both（枚举值）
-            "provider": "aliyun",  # aliyun / doubao / openai
-            "voices": {  # 为每个 provider 单独保存音色
-                "aliyun": "cherry",
-                "openai": "marin",
-                "doubao": ""  # 豆包不支持音色选择
+            "version": "2.0",
+            "s2t": {
+                "provider": "aliyun",
+                "listen_device_display": None
             },
-            "listen_device_display": None,  # 使用 display_name（包含 host api）
-            "speak_input_device_display": None,
-            "speak_output_device_display": None
+            "s2s": {
+                "provider": "aliyun",
+                "voice": "cherry",
+                "speak_input_device_display": None,
+                "speak_output_device_display": None
+            }
         }
 
     def save_config(self):
@@ -176,16 +183,6 @@ class ConfigManager:
         如果保存失败，会记录错误但不会抛出异常
         """
         try:
-            # 清理旧字段（如果存在）
-            if "voice" in self.config:
-                del self.config["voice"]
-
-            # 清理旧的 device_name 字段（使用 display_name 替代）
-            old_fields = ["listen_device_name", "speak_input_device_name", "speak_output_device_name"]
-            for field in old_fields:
-                if field in self.config:
-                    del self.config[field]
-
             # 保存配置
             with open(self.config_file, 'w', encoding='utf-8') as f:
                 json.dump(self.config, f, ensure_ascii=False, indent=2)
@@ -214,111 +211,163 @@ class ConfigManager:
         if auto_save:
             self.save_config()
 
-    # ===== 模式 =====
+    # ===== S2T 配置 =====
 
-    def get_mode(self) -> str:
-        """获取翻译模式"""
-        return self.config.get("mode", "listen")
+    def get_s2t_provider(self) -> str:
+        """获取 S2T Provider"""
+        return self.config.get("s2t", {}).get("provider", "aliyun")
 
-    def set_mode(self, mode: str):
-        """设置翻译模式"""
-        self.config["mode"] = mode
-        self.save_config()
-
-    # ===== Provider =====
-
-    def get_provider(self) -> str:
-        """获取 API 提供商"""
-        return self.config.get("provider", "aliyun")
-
-    def set_provider(self, provider: str):
-        """设置 API 提供商"""
-        self.config["provider"] = provider
-        self.save_config()
-
-    # ===== 音色 =====
-
-    def get_voice(self, provider: str = "aliyun") -> str:
+    def set_s2t_provider(self, provider: str):
         """
-        获取指定提供商的语音音色
+        设置 S2T Provider
 
         Args:
-            provider: API 提供商 (aliyun/openai/doubao)
-
-        Returns:
-            音色 ID，如果未配置则返回默认值
+            provider: API 提供商 (aliyun/doubao/openai)
         """
-        voices = self.config.get("voices", {})
-        default_voices = {
-            "aliyun": "cherry",
-            "openai": "marin",
-            "doubao": ""
-        }
-        return voices.get(provider, default_voices.get(provider, ""))
+        if "s2t" not in self.config:
+            self.config["s2t"] = {}
+        self.config["s2t"]["provider"] = provider
+        self.save_config()
 
-    def set_voice(self, voice: str, provider: str = "aliyun"):
+    def get_s2t_listen_device_display(self) -> Optional[str]:
+        """获取 S2T 音频输入设备的显示名称"""
+        return self.config.get("s2t", {}).get("listen_device_display")
+
+    def set_s2t_listen_device_display(self, display_name: Optional[str]):
         """
-        设置指定提供商的语音音色
+        设置 S2T 音频输入设备
+
+        Args:
+            display_name: 设备显示名称（例如 "立体声混音 (Windows WASAPI)"）
+        """
+        if "s2t" not in self.config:
+            self.config["s2t"] = {}
+        self.config["s2t"]["listen_device_display"] = display_name
+        self.save_config()
+
+    # ===== S2S 配置 =====
+
+    def get_s2s_provider(self) -> str:
+        """获取 S2S Provider"""
+        return self.config.get("s2s", {}).get("provider", "aliyun")
+
+    def set_s2s_provider(self, provider: str):
+        """
+        设置 S2S Provider
+
+        Args:
+            provider: API 提供商 (aliyun/doubao/openai)
+        """
+        if "s2s" not in self.config:
+            self.config["s2s"] = {}
+        self.config["s2s"]["provider"] = provider
+        self.save_config()
+
+    def get_s2s_voice(self) -> str:
+        """获取 S2S 音色"""
+        return self.config.get("s2s", {}).get("voice", "cherry")
+
+    def set_s2s_voice(self, voice: str):
+        """
+        设置 S2S 音色
 
         Args:
             voice: 音色 ID
-            provider: API 提供商 (aliyun/openai/doubao)
         """
-        if "voices" not in self.config:
-            self.config["voices"] = {}
-        self.config["voices"][provider] = voice
+        if "s2s" not in self.config:
+            self.config["s2s"] = {}
+        self.config["s2s"]["voice"] = voice
         self.save_config()
 
-    # ===== 设备配置（使用 display_name） =====
+    def get_s2s_input_device_display(self) -> Optional[str]:
+        """获取 S2S 输入设备（麦克风）的显示名称"""
+        return self.config.get("s2s", {}).get("speak_input_device_display")
 
-    def get_listen_device_display(self) -> Optional[str]:
-        """获取听模式设备的显示名称（包含 host api）"""
-        return self.config.get("listen_device_display")
-
-    def set_listen_device_display(self, display_name: Optional[str]):
+    def set_s2s_input_device_display(self, display_name: Optional[str]):
         """
-        设置听模式设备
+        设置 S2S 输入设备（麦克风）
 
         Args:
             display_name: 设备显示名称（例如 "麦克风 (Windows WASAPI)"）
         """
-        self.config["listen_device_display"] = display_name
+        if "s2s" not in self.config:
+            self.config["s2s"] = {}
+        self.config["s2s"]["speak_input_device_display"] = display_name
         self.save_config()
 
-    def get_speak_input_device_display(self) -> Optional[str]:
-        """获取说模式输入设备的显示名称"""
-        return self.config.get("speak_input_device_display")
+    def get_s2s_output_device_display(self) -> Optional[str]:
+        """获取 S2S 输出设备（虚拟麦克风）的显示名称"""
+        return self.config.get("s2s", {}).get("speak_output_device_display")
 
-    def set_speak_input_device_display(self, display_name: Optional[str]):
+    def set_s2s_output_device_display(self, display_name: Optional[str]):
         """
-        设置说模式输入设备
-
-        Args:
-            display_name: 设备显示名称（例如 "麦克风 (Windows WASAPI)"）
-        """
-        self.config["speak_input_device_display"] = display_name
-        self.save_config()
-
-    def get_speak_output_device_display(self) -> Optional[str]:
-        """获取说模式输出设备的显示名称"""
-        return self.config.get("speak_output_device_display")
-
-    def set_speak_output_device_display(self, display_name: Optional[str]):
-        """
-        设置说模式输出设备
+        设置 S2S 输出设备（虚拟麦克风）
 
         Args:
             display_name: 设备显示名称（例如 "Voicemeeter Input (VB-Audio Voicemeeter VAIO)"）
         """
-        self.config["speak_output_device_display"] = display_name
+        if "s2s" not in self.config:
+            self.config["s2s"] = {}
+        self.config["s2s"]["speak_output_device_display"] = display_name
         self.save_config()
+
+    # ===== 兼容旧版本（v1.0） =====
+    # 这些方法保留用于向后兼容，内部映射到新的 S2T/S2S 结构
+
+    def get_mode(self) -> str:
+        """获取翻译模式（兼容 v1.0，返回 "both"）"""
+        return "both"
+
+    def set_mode(self, mode: str):
+        """设置翻译模式（兼容 v1.0，空操作）"""
+        pass
+
+    def get_provider(self) -> str:
+        """获取 API 提供商（兼容 v1.0，返回 S2T provider）"""
+        return self.get_s2t_provider()
+
+    def set_provider(self, provider: str):
+        """设置 API 提供商（兼容 v1.0，同时设置 S2T 和 S2S）"""
+        self.set_s2t_provider(provider)
+        self.set_s2s_provider(provider)
+
+    def get_voice(self, provider: str = "aliyun") -> str:
+        """获取音色（兼容 v1.0）"""
+        return self.get_s2s_voice()
+
+    def set_voice(self, voice: str, provider: str = "aliyun"):
+        """设置音色（兼容 v1.0）"""
+        self.set_s2s_voice(voice)
+
+    def get_listen_device_display(self) -> Optional[str]:
+        """获取听模式设备（兼容 v1.0）"""
+        return self.get_s2t_listen_device_display()
+
+    def set_listen_device_display(self, display_name: Optional[str]):
+        """设置听模式设备（兼容 v1.0）"""
+        self.set_s2t_listen_device_display(display_name)
+
+    def get_speak_input_device_display(self) -> Optional[str]:
+        """获取说模式输入设备（兼容 v1.0）"""
+        return self.get_s2s_input_device_display()
+
+    def set_speak_input_device_display(self, display_name: Optional[str]):
+        """设置说模式输入设备（兼容 v1.0）"""
+        self.set_s2s_input_device_display(display_name)
+
+    def get_speak_output_device_display(self) -> Optional[str]:
+        """获取说模式输出设备（兼容 v1.0）"""
+        return self.get_s2s_output_device_display()
+
+    def set_speak_output_device_display(self, display_name: Optional[str]):
+        """设置说模式输出设备（兼容 v1.0）"""
+        self.set_s2s_output_device_display(display_name)
 
     # ===== 兼容旧版本（使用 device_name） =====
 
     def get_listen_device_name(self) -> Optional[str]:
         """获取听模式设备名（兼容旧版本）"""
-        display = self.get_listen_device_display()
-        # 从 display_name 中提取纯名称（去除 host api）
+        display = self.get_s2t_listen_device_display()
         if display:
             import re
             match = re.match(r'^([^(]+)', display)
@@ -328,7 +377,7 @@ class ConfigManager:
 
     def get_speak_input_device_name(self) -> Optional[str]:
         """获取说模式输入设备名（兼容旧版本）"""
-        display = self.get_speak_input_device_display()
+        display = self.get_s2s_input_device_display()
         if display:
             import re
             match = re.match(r'^([^(]+)', display)
@@ -338,7 +387,7 @@ class ConfigManager:
 
     def get_speak_output_device_name(self) -> Optional[str]:
         """获取说模式输出设备名（兼容旧版本）"""
-        display = self.get_speak_output_device_display()
+        display = self.get_s2s_output_device_display()
         if display:
             import re
             match = re.match(r'^([^(]+)', display)
@@ -348,15 +397,15 @@ class ConfigManager:
 
     def set_listen_device_name(self, name: Optional[str]):
         """设置听模式设备名（兼容旧版本，自动转换为 display_name）"""
-        self.set_listen_device_display(name)
+        self.set_s2t_listen_device_display(name)
 
     def set_speak_input_device_name(self, name: Optional[str]):
         """设置说模式输入设备名（兼容旧版本，自动转换为 display_name）"""
-        self.set_speak_input_device_display(name)
+        self.set_s2s_input_device_display(name)
 
     def set_speak_output_device_name(self, name: Optional[str]):
         """设置说模式输出设备名（兼容旧版本，自动转换为 display_name）"""
-        self.set_speak_output_device_display(name)
+        self.set_s2s_output_device_display(name)
 
 
 # 测试代码
@@ -371,18 +420,26 @@ if __name__ == "__main__":
     print("\n当前配置:")
     print(json.dumps(config.config, indent=2, ensure_ascii=False))
 
-    # 测试设置和获取
-    print("\n测试设置和获取:")
-    print(f"当前模式: {config.get_mode()}")
+    # 测试 S2T 设置和获取
+    print("\n测试 S2T 设置和获取:")
+    config.set_s2t_provider("doubao")
+    config.set_s2t_listen_device_display("立体声混音 (Windows WASAPI)")
+    print(f"S2T Provider: {config.get_s2t_provider()}")
+    print(f"S2T 设备: {config.get_s2t_listen_device_display()}")
 
-    config.set_mode("speak")
-    config.set_listen_device_display("立体声混音 (Windows WASAPI)")
-    config.set_speak_input_device_display("麦克风 (Windows WASAPI)")
-    config.set_speak_output_device_display("Voicemeeter Input (VB-Audio Voicemeeter VAIO)")
-    config.set_voice("nofish", "aliyun")
+    # 测试 S2S 设置和获取
+    print("\n测试 S2S 设置和获取:")
+    config.set_s2s_provider("openai")
+    config.set_s2s_voice("marin")
+    config.set_s2s_input_device_display("麦克风 (Windows WASAPI)")
+    config.set_s2s_output_device_display("Voicemeeter Input (VB-Audio Voicemeeter VAIO)")
+    print(f"S2S Provider: {config.get_s2s_provider()}")
+    print(f"S2S 音色: {config.get_s2s_voice()}")
+    print(f"S2S 输入: {config.get_s2s_input_device_display()}")
+    print(f"S2S 输出: {config.get_s2s_output_device_display()}")
 
-    print(f"保存后的模式: {config.get_mode()}")
-    print(f"听模式设备: {config.get_listen_device_display()}")
-    print(f"说模式输入: {config.get_speak_input_device_display()}")
-    print(f"说模式输出: {config.get_speak_output_device_display()}")
-    print(f"阿里云音色: {config.get_voice('aliyun')}")
+    # 测试兼容方法
+    print("\n测试兼容旧版本方法:")
+    print(f"get_provider(): {config.get_provider()}")
+    print(f"get_voice(): {config.get_voice()}")
+    print(f"get_listen_device_display(): {config.get_listen_device_display()}")

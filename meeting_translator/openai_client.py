@@ -47,11 +47,16 @@ class OpenAIClient(BaseTranslationClient):
 
     支持 S2S 和 S2T 两种模式：
     - S2S (audio_enabled=True): 语音输入 → Realtime API → 语音输出
-    - S2T (audio_enabled=False): 语音输入 → gpt-4o-transcribe (streaming ASR) → GPT翻译 → 文本输出
+    - S2T (audio_enabled=False): 语音输入 → gpt-4o-mini-transcribe-2025-12-15 (streaming ASR) → GPT翻译 → 文本输出
 
     S2T 模式使用两阶段处理：
-    1. gpt-4o-transcribe: 流式语音识别（纯ASR，无对话）
+    1. gpt-4o-mini-transcribe-2025-12-15: 流式语音识别（纯ASR，无对话）
+       - 90% fewer hallucinations vs Whisper v2
+       - 70% fewer hallucinations vs previous gpt-4o-transcribe
+       - Optimized for real-world conversational settings
     2. GPT-4o-mini: 文本翻译（高质量翻译）
+       - 可选 gpt-5-nano ($0.05/$0.40 per 1M tokens) 以获得更低成本（67% cheaper）
+       - 默认 gpt-4o-mini ($0.15/$0.60 per 1M tokens) 提供稳定性能
 
     继承自 BaseTranslationClient，已包含：
     - OutputMixin: 统一的输出接口
@@ -85,8 +90,8 @@ class OpenAIClient(BaseTranslationClient):
         voice: Optional[str] = "marin",
         audio_enabled: bool = True,
         model: str = "gpt-4o-mini-realtime-preview",
-        transcribe_model: str = "gpt-4o-transcribe",
-        translation_model: str = "gpt-4o-mini",
+        transcribe_model: str = "gpt-4o-mini-transcribe-2025-12-15",
+        translation_model: str = "gpt-5-nano",
         **kwargs
     ):
         """
@@ -99,8 +104,8 @@ class OpenAIClient(BaseTranslationClient):
             voice: 音色选择 (仅 S2S 模式)
             audio_enabled: 是否启用音频输出（True=S2S, False=S2T）
             model: S2S 模式的 Realtime 模型名称
-            transcribe_model: S2T 模式的转录模型 (gpt-4o-transcribe / gpt-4o-mini-transcribe)
-            translation_model: S2T 模式的翻译模型 (gpt-4o-mini / gpt-4o)
+            transcribe_model: S2T 模式的转录模型 (gpt-4o-mini-transcribe-2025-12-15 / gpt-4o-transcribe / gpt-4o-mini-transcribe)
+            translation_model: S2T 模式的翻译模型 (gpt-5-nano / gpt-4o-mini / gpt-5-mini / gpt-4o)
         """
         if not api_key:
             raise ValueError("API key cannot be empty.")
@@ -276,7 +281,6 @@ class OpenAIClient(BaseTranslationClient):
             transcription_config["prompt"] = (
                 "Technical terms: AI agent, Python, Jupyter notebook, CLI, API, "
                 "dev server, VPN, cluster, customer profile, JSON, YAML. "
-                "Proper nouns: Marimo, Hatisha."
             )
 
         # For transcription intent: use transcription_session.update with session wrapper
@@ -362,7 +366,7 @@ If silence, output nothing."""
             source_lang = self.lang_names.get(self.source_language, self.source_language)
             target_lang = self.lang_names.get(self.target_language, self.target_language)
 
-            system_content = f"""You are a professional translator. Translate {source_lang} to {target_lang}.
+            system_content = f"""You are a world class real-time translator. Translate {source_lang} to {target_lang}.
 
 Rules:
 - Output ONLY the translation, nothing else
@@ -378,15 +382,24 @@ Previous context:
 "{self._previous_transcription}"
 Use this for continuity."""
 
-            response = self._openai_client.chat.completions.create(
-                model=self.translation_model,
-                messages=[
+            # GPT-5/reasoning models use max_completion_tokens, older models use max_tokens
+            completion_params = {
+                "model": self.translation_model,
+                "messages": [
                     {"role": "system", "content": system_content},
                     {"role": "user", "content": text}
                 ],
-                temperature=0.3,
-                max_tokens=1000
-            )
+            }
+
+            # GPT-5 family (gpt-5*) and reasoning models (o1, o3, o4) use max_completion_tokens
+            # and don't support temperature parameter (only default temperature=1)
+            if self.translation_model.startswith(("gpt-5", "o1", "o3", "o4")):
+                completion_params["max_completion_tokens"] = 1000
+            else:
+                completion_params["max_tokens"] = 1000
+                completion_params["temperature"] = 0.3
+
+            response = self._openai_client.chat.completions.create(**completion_params)
 
             result = response.choices[0].message.content
             return result.strip() if result else ""

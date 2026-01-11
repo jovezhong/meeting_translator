@@ -149,17 +149,18 @@ class OpenAIClient(BaseTranslationClient):
         # S2T: Delta 增量转录追踪（用于渐进式显示）
         self._current_item_id = None
         self._current_delta_transcript = ""
-        # 英文显示节流（快，每50ms或2个新词）
-        self._last_english_time = 0.0
-        self._last_english_word_count = 0
-        self._english_throttle_ms = 50  # 50ms - 20 updates/sec max
-        self._english_word_delta = 2  # 每2个新词更新一次
+        # 显示节流（每50ms或2个新词更新显示）
+        self._last_display_time = 0.0
+        self._last_display_word_count = 0
+        self._display_throttle_ms = 50  # 50ms - 20 updates/sec max
+        self._display_word_delta = 2  # 每2个新词更新一次显示
         # 中文翻译节流（慢，每2秒或8个新词）
         self._last_translation_time = 0.0
         self._last_translation_word_count = 0
         self._translation_throttle_ms = 2000  # 2秒
         self._translation_word_delta = 8  # 每8个新词翻译一次
         self._translation_task = None  # 后台翻译任务
+        self._current_delta_translation = ""  # 当前增量翻译结果
 
         # 语言名称映射
         self.lang_names = {
@@ -476,8 +477,9 @@ Use this for continuity."""
                         if item_id:
                             self._current_item_id = item_id
                             self._current_delta_transcript = ""
-                            self._last_english_time = 0.0
-                            self._last_english_word_count = 0
+                            self._current_delta_translation = ""
+                            self._last_display_time = 0.0
+                            self._last_display_word_count = 0
                             self._last_translation_time = 0.0
                             self._last_translation_word_count = 0
 
@@ -548,9 +550,9 @@ Use this for continuity."""
     async def _handle_s2t_delta(self, partial_transcript: str):
         """处理 S2T 模式的增量转录（Delta 事件）
 
-        分离英文和中文的节流策略：
-        - 英文：快速更新（每50ms或2个新词），提供即时反馈
-        - 中文：慢速翻译（每2秒或8个新词），避免API过载
+        策略：始终显示英文+中文组合，避免相互覆盖
+        - 显示更新：每50ms或2个新词
+        - 翻译触发：每2秒或8个新词（后台异步）
         """
         if not partial_transcript or not partial_transcript.strip():
             return
@@ -564,34 +566,12 @@ Use this for continuity."""
             words = partial_transcript.split()
 
         word_count = len(words)
-        # 降低门槛到1个词就开始显示
         if word_count < 1:
             return
 
         current_time = time.time() * 1000  # 毫秒
 
-        # ========== 英文显示（快速，低延迟）==========
-        time_since_english = current_time - self._last_english_time
-        words_since_english = word_count - self._last_english_word_count
-
-        should_update_english = (
-            time_since_english >= self._english_throttle_ms or
-            words_since_english >= self._english_word_delta
-        )
-
-        if should_update_english:
-            self._last_english_time = current_time
-            self._last_english_word_count = word_count
-
-            # 立即显示英文（不等待翻译）
-            self.output_subtitle(
-                target_text=partial_transcript,
-                source_text="",
-                is_final=False,
-                extra_metadata={"provider": "openai", "mode": "S2T", "stage": "Delta-EN"}
-            )
-
-        # ========== 中文翻译（慢速，后台）==========
+        # ========== 触发翻译（慢速，后台）==========
         time_since_translation = current_time - self._last_translation_time
         words_since_translation = word_count - self._last_translation_word_count
 
@@ -609,8 +589,34 @@ Use this for continuity."""
                 self._translate_delta_async(partial_transcript)
             )
 
+        # ========== 显示更新（快速，同时显示英文+中文）==========
+        time_since_display = current_time - self._last_display_time
+        words_since_display = word_count - self._last_display_word_count
+
+        should_update_display = (
+            time_since_display >= self._display_throttle_ms or
+            words_since_display >= self._display_word_delta
+        )
+
+        if should_update_display:
+            self._last_display_time = current_time
+            self._last_display_word_count = word_count
+
+            # 同时显示英文（source）和当前最佳中文翻译（target）
+            # 如果还没有翻译，target 为空
+            self.output_subtitle(
+                target_text=self._current_delta_translation,
+                source_text=partial_transcript,
+                is_final=False,
+                extra_metadata={"provider": "openai", "mode": "S2T", "stage": "Delta"}
+            )
+
     async def _translate_delta_async(self, text: str):
-        """后台异步翻译 delta 文本（fire-and-forget）"""
+        """后台异步翻译 delta 文本（fire-and-forget）
+
+        更新 _current_delta_translation，不直接输出字幕
+        由 _handle_s2t_delta 统一输出显示（避免英文和中文相互覆盖）
+        """
         try:
             loop = asyncio.get_event_loop()
             translation = await loop.run_in_executor(
@@ -618,12 +624,8 @@ Use this for continuity."""
             )
 
             if translation:
-                self.output_subtitle(
-                    target_text=translation,
-                    source_text=text,
-                    is_final=False,
-                    extra_metadata={"provider": "openai", "mode": "S2T", "stage": "Delta-CN"}
-                )
+                # 更新当前翻译状态，由主线程统一显示
+                self._current_delta_translation = translation
                 self._previous_transcription = text
                 self._previous_translation = translation
         except asyncio.CancelledError:

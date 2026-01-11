@@ -55,8 +55,8 @@ class OpenAIClient(BaseTranslationClient):
        - 70% fewer hallucinations vs previous gpt-4o-transcribe
        - Optimized for real-world conversational settings
     2. GPT-4o-mini: 文本翻译（高质量翻译）
-       - 可选 gpt-5-nano ($0.05/$0.40 per 1M tokens) 以获得更低成本（67% cheaper）
-       - 默认 gpt-4o-mini ($0.15/$0.60 per 1M tokens) 提供稳定性能
+       - 默认 gpt-4o-mini ($0.15/$0.60 per 1M tokens) 提供最佳速度和质量平衡
+       - 可选 gpt-5-nano ($0.05/$0.40 per 1M tokens) 以降低成本（但响应较慢）
 
     继承自 BaseTranslationClient，已包含：
     - OutputMixin: 统一的输出接口
@@ -91,7 +91,7 @@ class OpenAIClient(BaseTranslationClient):
         audio_enabled: bool = True,
         model: str = "gpt-4o-mini-realtime-preview",
         transcribe_model: str = "gpt-4o-mini-transcribe-2025-12-15",
-        translation_model: str = "gpt-5-nano",
+        translation_model: str = "gpt-4o-mini",
         **kwargs
     ):
         """
@@ -105,7 +105,7 @@ class OpenAIClient(BaseTranslationClient):
             audio_enabled: 是否启用音频输出（True=S2S, False=S2T）
             model: S2S 模式的 Realtime 模型名称
             transcribe_model: S2T 模式的转录模型 (gpt-4o-mini-transcribe-2025-12-15 / gpt-4o-transcribe / gpt-4o-mini-transcribe)
-            translation_model: S2T 模式的翻译模型 (gpt-5-nano / gpt-4o-mini / gpt-5-mini / gpt-4o)
+            translation_model: S2T 模式的翻译模型 (gpt-4o-mini / gpt-5-nano / gpt-5-mini / gpt-4o)
         """
         if not api_key:
             raise ValueError("API key cannot be empty.")
@@ -366,7 +366,7 @@ If silence, output nothing."""
             source_lang = self.lang_names.get(self.source_language, self.source_language)
             target_lang = self.lang_names.get(self.target_language, self.target_language)
 
-            system_content = f"""You are a world class real-time translator. Translate {source_lang} to {target_lang}.
+            system_content = f"""You are a professional translator. Translate {source_lang} to {target_lang}.
 
 Rules:
 - Output ONLY the translation, nothing else

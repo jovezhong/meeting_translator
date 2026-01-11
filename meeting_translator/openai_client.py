@@ -10,6 +10,7 @@ S2S Mode (audio_enabled=True): Uses conversation API for audio-to-audio translat
 """
 
 import os
+import re
 import base64
 import asyncio
 import json
@@ -146,21 +147,30 @@ class OpenAIClient(BaseTranslationClient):
         self._previous_transcription = ""
         self._previous_translation = ""
 
+        # S2T: 语音活动状态追踪
+        self._speech_active = False  # 是否正在说话（speech_started到speech_stopped之间）
+        self._last_output_time = 0.0  # 上次输出时间（用于显示Listening提示）
+        self._listening_indicator_task = None  # 延迟显示Listening的任务
+
         # S2T: Delta 增量转录追踪（用于渐进式显示）
         self._current_item_id = None
         self._current_delta_transcript = ""
+        self._translated_sentences = []  # 已翻译的句子列表 [(en, zh), ...]
+        self._last_sentence_count = 0  # 上次处理的句子数量
         # 显示节流（每50ms或2个新词更新显示）
         self._last_display_time = 0.0
         self._last_display_word_count = 0
         self._display_throttle_ms = 50  # 50ms - 20 updates/sec max
         self._display_word_delta = 2  # 每2个新词更新一次显示
-        # 中文翻译节流（慢，每2秒或8个新词）
+        # 未完成句子的翻译节流（每1秒或4个新词）
         self._last_translation_time = 0.0
         self._last_translation_word_count = 0
-        self._translation_throttle_ms = 2000  # 2秒
-        self._translation_word_delta = 8  # 每8个新词翻译一次
+        self._translation_throttle_ms = 1000  # 1秒
+        self._translation_word_delta = 4  # 每4个新词翻译一次
         self._translation_task = None  # 后台翻译任务
-        self._current_delta_translation = ""  # 当前增量翻译结果
+        self._pending_sentence = ""  # 未完成的句子（不以.!?结尾）
+        self._pending_translation = ""  # 未完成句子的翻译
+        self._last_output_text = ""  # 上次输出的英文文本（用于去重）
 
         # 语言名称映射
         self.lang_names = {
@@ -302,7 +312,6 @@ class OpenAIClient(BaseTranslationClient):
             }
         }
 
-        self.output_debug(f"Sending S2T config: {json.dumps(config, indent=2)}")
         await self.ws.send(json.dumps(config))
         self.output_status(f"S2T 会话已配置: {self.transcribe_model} + {self.translation_model}")
 
@@ -439,10 +448,6 @@ Use this for continuity."""
                     event = json.loads(message)
                     event_type = event.get("type")
 
-                    # Debug: log all event types
-                    if not self.audio_enabled:
-                        self.output_debug(f"Received event: {event_type}")
-
                     # ======== 共享事件 ========
                     if event_type == "session.created" or event_type == "session.updated":
                         pass
@@ -453,38 +458,32 @@ Use this for continuity."""
                         await self._configure_s2t_session()
 
                     elif event_type == "transcription_session.updated":
-                        self.output_debug("Transcription session updated")
-
-                    elif event_type == "input_audio_buffer.speech_started":
                         pass
 
+                    elif event_type == "input_audio_buffer.speech_started":
+                        self._speech_active = True
+                        # Start delayed task to show "Listening..." if no output after 3s
+                        self._cancel_listening_indicator()
+                        self._listening_indicator_task = asyncio.create_task(
+                            self._show_listening_indicator_after_delay(3.0)
+                        )
+
                     elif event_type == "input_audio_buffer.speech_stopped":
-                        if self.audio_enabled and self._s2s_has_user_audio:
-                            self._s2s_expect_response = True
-                        else:
-                            self._s2s_expect_response = False
+                        self._speech_active = False
+                        self._cancel_listening_indicator()
+                        self._s2s_expect_response = self.audio_enabled and self._s2s_has_user_audio
                         self._s2s_has_user_audio = False
 
                     elif event_type == "input_audio_buffer.committed":
-                        # 转录模式：音频块已提交处理
                         pass
 
-                    # ======== S2T 转录模式事件 ========
+                    # ======== S2T Transcription Events ========
                     elif event_type == "conversation.item.created":
-                        # 新的转录项创建 - 重置 delta 状态
-                        item = event.get("item", {})
-                        item_id = item.get("id", "")
+                        item_id = event.get("item", {}).get("id", "")
                         if item_id:
-                            self._current_item_id = item_id
-                            self._current_delta_transcript = ""
-                            self._current_delta_translation = ""
-                            self._last_display_time = 0.0
-                            self._last_display_word_count = 0
-                            self._last_translation_time = 0.0
-                            self._last_translation_word_count = 0
+                            self._reset_transcription_state(item_id)
 
                     elif event_type == "conversation.item.input_audio_transcription.delta":
-                        # 增量转录 - 实时显示部分结果
                         item_id = event.get("item_id", "")
                         delta = event.get("delta", "")
                         if item_id == self._current_item_id and delta:
@@ -492,19 +491,14 @@ Use this for continuity."""
                             await self._handle_s2t_delta(self._current_delta_transcript)
 
                     elif event_type == "conversation.item.input_audio_transcription.completed":
-                        # 转录完成 - 这是纯 ASR 结果（完整句子）
                         item_id = event.get("item_id", "")
-                        transcript = event.get("transcript", "")
-                        if item_id == self._current_item_id and transcript and transcript.strip():
-                            # 取消任何待处理的后台翻译任务
-                            if self._translation_task and not self._translation_task.done():
-                                self._translation_task.cancel()
-                            # 重置 delta 状态
+                        transcript = event.get("transcript", "").strip()
+                        if item_id == self._current_item_id and transcript:
+                            self._cancel_pending_translation()
                             self._current_delta_transcript = ""
-                            # 处理完整转录（包括最终翻译）
                             await self._handle_s2t_transcription(transcript)
 
-                    # ======== S2S 会话模式事件 ========
+                    # ======== S2S Conversation Events ========
                     elif event_type == "response.audio.delta" and self.audio_enabled:
                         if not self._s2s_expect_response:
                             continue
@@ -547,122 +541,152 @@ Use this for continuity."""
             self.output_error(f"消息处理错误: {e}", exc_info=True)
             self.is_connected = False
 
-    async def _handle_s2t_delta(self, partial_transcript: str):
-        """处理 S2T 模式的增量转录（Delta 事件）
+    async def _show_listening_indicator_after_delay(self, delay_seconds: float):
+        """Show 'Listening...' indicator if no output after delay while speech is active."""
+        try:
+            await asyncio.sleep(delay_seconds)
+            time_since_output_ms = time.time() * 1000 - self._last_output_time
+            if self._speech_active and time_since_output_ms >= 3000:
+                self.output_subtitle(
+                    target_text="...",
+                    source_text="🎤 Listening...",
+                    is_final=False,
+                    extra_metadata={"provider": "openai", "mode": "S2T", "stage": "Listening"}
+                )
+        except asyncio.CancelledError:
+            pass
 
-        策略：始终显示英文+中文组合，避免相互覆盖
-        - 显示更新：每50ms或2个新词
-        - 翻译触发：每2秒或8个新词（后台异步）
+    async def _handle_s2t_delta(self, partial_transcript: str):
+        """Process incremental S2T transcription (delta events).
+
+        Splits text into sentences at punctuation marks (.!?,。！？，).
+        Complete sentences are translated immediately.
+        Incomplete sentences are shown in source language until complete.
         """
         if not partial_transcript or not partial_transcript.strip():
             return
 
-        partial_transcript = partial_transcript.strip()
+        text = partial_transcript.strip()
 
-        # 分词
-        if self.source_language == "zh":
-            words = list(partial_transcript)
-        else:
-            words = partial_transcript.split()
+        # Split into sentences at punctuation boundaries
+        sentence_pattern = r'([.!?,。！？，]+)'
+        parts = re.split(sentence_pattern, text)
 
-        word_count = len(words)
-        if word_count < 1:
-            return
+        # Reassemble: pair each text segment with its trailing punctuation
+        sentences = []
+        for i in range(0, len(parts) - 1, 2):
+            segment = parts[i].strip()
+            if segment:
+                punctuation = parts[i + 1] if i + 1 < len(parts) else ""
+                sentences.append(segment + punctuation)
 
-        current_time = time.time() * 1000  # 毫秒
+        # Text after the last punctuation is the incomplete "pending" portion
+        pending = parts[-1].strip() if len(parts) % 2 == 1 else ""
 
-        # ========== 触发翻译（慢速，后台）==========
-        time_since_translation = current_time - self._last_translation_time
-        words_since_translation = word_count - self._last_translation_word_count
+        # Translate any new complete sentences (sequentially for proper timestamps)
+        if len(sentences) > self._last_sentence_count:
+            for sentence in sentences[self._last_sentence_count:]:
+                await self._translate_and_output_sentence(sentence, is_final=True)
+            self._last_sentence_count = len(sentences)
+            self._pending_sentence = ""
+            self._pending_translation = ""
 
-        should_translate = (
-            time_since_translation >= self._translation_throttle_ms or
-            words_since_translation >= self._translation_word_delta
-        )
+        # Handle incomplete sentence at the end
+        if pending and pending != self._pending_sentence:
+            self._pending_sentence = pending
+            word_count = len(pending.split())
+            time_since_last_translation = time.time() * 1000 - self._last_translation_time
 
-        if should_translate and partial_transcript != self._previous_transcription:
-            self._last_translation_time = current_time
-            self._last_translation_word_count = word_count
+            # Translate if long enough (4+ words) and throttle time passed (800ms)
+            if word_count >= 4 and time_since_last_translation >= 800:
+                self._last_translation_time = time.time() * 1000
+                asyncio.create_task(self._translate_and_output_sentence(pending, is_final=False))
+            else:
+                # Show source text without translation
+                self.output_subtitle(
+                    target_text="",
+                    source_text=pending,
+                    is_final=False,
+                    extra_metadata={"provider": "openai", "mode": "S2T", "stage": "Pending"}
+                )
 
-            # 后台翻译（fire-and-forget，不阻塞）
-            self._translation_task = asyncio.create_task(
-                self._translate_delta_async(partial_transcript)
-            )
+    async def _translate_and_output_sentence(self, sentence: str, is_final: bool = True):
+        """Translate a sentence and output it.
 
-        # ========== 显示更新（快速，同时显示英文+中文）==========
-        time_since_display = current_time - self._last_display_time
-        words_since_display = word_count - self._last_display_word_count
-
-        should_update_display = (
-            time_since_display >= self._display_throttle_ms or
-            words_since_display >= self._display_word_delta
-        )
-
-        if should_update_display:
-            self._last_display_time = current_time
-            self._last_display_word_count = word_count
-
-            # 同时显示英文（source）和当前最佳中文翻译（target）
-            # 如果还没有翻译，target 为空
-            self.output_subtitle(
-                target_text=self._current_delta_translation,
-                source_text=partial_transcript,
-                is_final=False,
-                extra_metadata={"provider": "openai", "mode": "S2T", "stage": "Delta"}
-            )
-
-    async def _translate_delta_async(self, text: str):
-        """后台异步翻译 delta 文本（fire-and-forget）
-
-        更新 _current_delta_translation，不直接输出字幕
-        由 _handle_s2t_delta 统一输出显示（避免英文和中文相互覆盖）
+        Args:
+            sentence: The sentence to translate
+            is_final: If True, adds to history. If False, shows as temporary preview.
         """
         try:
+            # Skip duplicate non-final outputs (compare text without punctuation)
+            if not is_final and self._normalize_text(sentence) == self._normalize_text(self._last_output_text):
+                return
+
             loop = asyncio.get_event_loop()
-            translation = await loop.run_in_executor(
-                None, self._translate_text, text
-            )
+            translation = await loop.run_in_executor(None, self._translate_text, sentence)
 
             if translation:
-                # 更新当前翻译状态，由主线程统一显示
-                self._current_delta_translation = translation
-                self._previous_transcription = text
+                self.output_subtitle(
+                    target_text=translation,
+                    source_text=sentence,
+                    is_final=is_final,
+                    extra_metadata={"provider": "openai", "mode": "S2T", "stage": "Sentence"}
+                )
+
+                self._last_output_time = time.time() * 1000
+                self._cancel_listening_indicator()
+
+                self._last_output_text = sentence
+                self._previous_transcription = sentence
                 self._previous_translation = translation
+
         except asyncio.CancelledError:
-            pass  # 任务被取消，忽略
+            pass
         except Exception as e:
-            self.output_debug(f"Delta翻译失败: {e}")
+            self.output_debug(f"Sentence translation failed: {e}")
+
+    @staticmethod
+    def _normalize_text(text: str) -> str:
+        """Remove punctuation and whitespace for text comparison."""
+        return re.sub(r'[.!?,。！？，\s]+', '', text.lower())
+
+    def _cancel_listening_indicator(self):
+        """Cancel any pending listening indicator task."""
+        if self._listening_indicator_task:
+            self._listening_indicator_task.cancel()
+            self._listening_indicator_task = None
+
+    def _cancel_pending_translation(self):
+        """Cancel any pending background translation task."""
+        if self._translation_task and not self._translation_task.done():
+            self._translation_task.cancel()
+
+    def _reset_transcription_state(self, item_id: str):
+        """Reset transcription state for a new conversation item."""
+        self._current_item_id = item_id
+        self._current_delta_transcript = ""
+        self._translated_sentences = []
+        self._last_sentence_count = 0
+        self._pending_sentence = ""
+        self._pending_translation = ""
+        self._last_display_time = 0.0
+        self._last_display_word_count = 0
+        self._last_translation_time = 0.0
+        self._last_translation_word_count = 0
+        self._last_output_text = ""
 
     async def _handle_s2t_transcription(self, transcript: str):
-        """处理 S2T 模式的转录结果（完整句子）
+        """Handle completed S2T transcription (triggered by VAD silence detection).
 
-        完成时做最终翻译。如果与之前 delta 翻译的文本相同，可能复用翻译；
-        否则重新翻译以获得更准确的结果（因为现在有完整上下文）
+        Flushes any remaining pending content that wasn't processed by delta handler.
         """
-        # 检查是否需要重新翻译
-        # 如果完整转录与最后的 delta 转录相同，可以复用之前的翻译
-        if transcript == self._previous_transcription and self._previous_translation:
-            translation = self._previous_translation
-        else:
-            # 完整句子可能与 delta 不同，或首次翻译，重新翻译以获得更好质量
-            # 在线程池中运行以避免阻塞事件循环
-            loop = asyncio.get_event_loop()
-            translation = await loop.run_in_executor(
-                None, self._translate_text, transcript
-            )
+        # Flush pending content (text without punctuation at the end)
+        if self._pending_sentence and len(self._pending_sentence.strip()) >= 2:
+            await self._translate_and_output_sentence(self._pending_sentence, is_final=True)
+            self._pending_sentence = ""
+            self._pending_translation = ""
 
-        if translation:
-            # 输出最终翻译结果（标记为 final）
-            self.output_subtitle(
-                target_text=translation,
-                source_text=transcript,
-                is_final=True,
-                extra_metadata={"provider": "openai", "mode": "S2T", "stage": "Final"}
-            )
-
-            # 更新上下文
-            self._previous_transcription = transcript
-            self._previous_translation = translation
+        self._previous_transcription = transcript
 
     async def close(self):
         """关闭连接并清理资源"""

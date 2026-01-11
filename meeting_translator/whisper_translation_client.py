@@ -63,7 +63,7 @@ class WhisperTranslationClient(BaseTranslationClient):
         - OPENAI_API_KEY: API key for both Whisper and GPT
         - WHISPER_MODEL: whisper-1 (default)
         - TRANSLATION_MODEL: gpt-4o-mini or gpt-4o (default: gpt-4o-mini)
-        - WHISPER_BUFFER_SECONDS: Audio buffer duration (default: 5.0)
+        - WHISPER_BUFFER_SECONDS: Audio buffer duration
     """
 
     provider = TranslationProvider.WHISPER
@@ -91,7 +91,7 @@ class WhisperTranslationClient(BaseTranslationClient):
             target_language: Target language code (default: zh)
             whisper_model: Whisper model to use (default: whisper-1)
             translation_model: GPT model for translation (default: gpt-4o-mini)
-            buffer_seconds: Seconds of audio to buffer before ASR (default: 8.0)
+            buffer_seconds: Seconds of audio to buffer before ASR
             audio_enabled: Whether to output audio (not supported yet)
         """
         super().__init__(
@@ -461,12 +461,19 @@ def create_whisper_client(
     if not api_key:
         raise ValueError("OPENAI_API_KEY not provided and not found in environment")
 
-    return WhisperTranslationClient(
-        api_key=api_key,
-        source_language=source_language,
-        target_language=target_language,
-        whisper_model=os.getenv("WHISPER_MODEL", "whisper-1"),
-        translation_model=os.getenv("TRANSLATION_MODEL", "gpt-4o-mini"),
-        buffer_seconds=float(os.getenv("WHISPER_BUFFER_SECONDS", "8.0")),
+    # Build kwargs for WhisperTranslationClient
+    client_kwargs = {
+        "api_key": api_key,
+        "source_language": source_language,
+        "target_language": target_language,
+        "whisper_model": os.getenv("WHISPER_MODEL", "whisper-1"),
+        "translation_model": os.getenv("TRANSLATION_MODEL", "gpt-4o-mini"),
         **kwargs
-    )
+    }
+
+    # Only pass buffer_seconds if explicitly set in env, otherwise use constructor default
+    buffer_env = os.getenv("WHISPER_BUFFER_SECONDS")
+    if buffer_env is not None:
+        client_kwargs["buffer_seconds"] = float(buffer_env)
+
+    return WhisperTranslationClient(**client_kwargs)

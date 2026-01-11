@@ -246,7 +246,7 @@ class MeetingTranslatorApp(QWidget):
         self.s2t_provider_combo.addItem("阿里云 Qwen (Alibaba Cloud)", "aliyun")
         self.s2t_provider_combo.addItem("豆包 Doubao (ByteDance)", "doubao")
         self.s2t_provider_combo.addItem("OpenAI Realtime", "openai")
-        self.s2t_provider_combo.addItem("Whisper ASR + GPT Translation (纯文本)", "whisper")
+        self.s2t_provider_combo.addItem("Whisper(实验性)", "whisper")
         self.s2t_provider_combo.currentIndexChanged.connect(self.on_s2t_provider_changed)
         s2t_provider_layout.addWidget(self.s2t_provider_combo, 1)
 

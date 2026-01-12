@@ -585,6 +585,11 @@ Use this for continuity."""
 
         # Translate any new complete sentences (sequentially for proper timestamps)
         if len(sentences) > self._last_sentence_count:
+            # Cancel any pending translation task to avoid duplicate output
+            if self._translation_task and not self._translation_task.done():
+                self._translation_task.cancel()
+                self._translation_task = None
+
             for sentence in sentences[self._last_sentence_count:]:
                 await self._translate_and_output_sentence(sentence, is_final=True)
             self._last_sentence_count = len(sentences)
@@ -600,7 +605,10 @@ Use this for continuity."""
             # Translate if long enough (4+ words) and throttle time passed (800ms)
             if word_count >= 4 and time_since_last_translation >= 800:
                 self._last_translation_time = time.time() * 1000
-                asyncio.create_task(self._translate_and_output_sentence(pending, is_final=False))
+                # Store task reference so it can be cancelled if complete sentence arrives
+                self._translation_task = asyncio.create_task(
+                    self._translate_and_output_sentence(pending, is_final=False)
+                )
             else:
                 # Show source text without translation
                 self.output_subtitle(
@@ -618,9 +626,15 @@ Use this for continuity."""
             is_final: If True, adds to history. If False, shows as temporary preview.
         """
         try:
-            # Skip duplicate non-final outputs (compare text without punctuation)
-            if not is_final and self._normalize_text(sentence) == self._normalize_text(self._last_output_text):
-                return
+            normalized = self._normalize_text(sentence)
+            last_normalized = self._normalize_text(self._last_output_text)
+
+            # Skip non-final outputs if:
+            # 1. Same text already output, OR
+            # 2. This is a prefix of what was already output (longer version shown)
+            if not is_final and normalized and last_normalized:
+                if normalized == last_normalized or last_normalized.startswith(normalized):
+                    return
 
             loop = asyncio.get_event_loop()
             translation = await loop.run_in_executor(None, self._translate_text, sentence)

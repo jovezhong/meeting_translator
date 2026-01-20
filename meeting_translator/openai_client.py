@@ -316,12 +316,11 @@ class OpenAIClient(BaseTranslationClient):
             "language": lang,
         }
 
-        # Add prompt for better technical term recognition
-        if lang == "en":
-            transcription_config["prompt"] = (
-                "Technical terms: AI agent, Python, Jupyter notebook, CLI, API, "
-                "dev server, VPN, cluster, customer profile, JSON, YAML. "
-            )
+        # Add prompt for better technical term recognition, but this will create a lot of noise
+        # if lang == "en":
+        #     transcription_config["prompt"] = (
+        #         "Technical terms: AI agent, LLM, Python, Jupyter notebook"
+        #     )
 
         # For transcription intent: use transcription_session.update with session wrapper
         config = {
